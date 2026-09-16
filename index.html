@@ -56,6 +56,7 @@
 
       <nav class="nav" id="nav">
         <button class="nav-item ativo" data-view="visao">Visão geral</button>
+        <button class="nav-item" data-view="quadro">Quadro</button>
         <button class="nav-item" data-view="cronograma">Cronograma</button>
         <button class="nav-item" data-view="projetos">Projetos</button>
         <button class="nav-item" data-view="notificacoes">
@@ -95,11 +96,18 @@
         </div>
       </div>
 
-      <div class="view-head sub">
-        <h3>Projetos por etapa</h3>
+    </section>
+
+    <!-- ----------------------------------------- QUADRO (KANBAN) -->
+    <section class="view" id="view-quadro">
+      <div class="view-head">
+        <div>
+          <h2>Quadro</h2>
+          <p class="view-sub">Arraste um projeto para mudar de etapa. Status e progresso você muda direto no card.</p>
+        </div>
         <div class="filtros-rapidos" id="filtros-rag"></div>
       </div>
-      <div id="grupos-etapa"></div>
+      <div class="kanban" id="kanban"></div>
     </section>
 
     <!-- ------------------------------------------------- CRONOGRAMA -->

@@ -293,59 +293,152 @@ function renderVisao() {
         </li>`).join('')
     : '<li class="vazio">Nenhum projeto em risco de prazo. Tudo dentro do combinado.</li>';
 
-  // filtros rápidos
+  renderQuadro();
+}
+
+// =====================================================================
+// QUADRO (Kanban) — arrastar muda a etapa; status e progresso mudam no
+// próprio card. A ficha completa só abre quando você clica no nome.
+// =====================================================================
+function renderQuadro() {
+  const cont = { r: 0, a: 0, v: 0, s: 0, c: 0 };
+  estado.projetos.forEach((p) => cont[calcRag(p).k]++);
+
   $('#filtros-rag').innerHTML =
     `<button class="chip ${estado.filtroRag === '' ? 'ativo' : ''}" data-rag="">Todos</button>` +
     ORDEM_RAG.filter((k) => cont[k]).map((k) =>
       `<button class="chip ${estado.filtroRag === k ? 'ativo' : ''}" data-rag="${k}">${RAG[k].nome} (${cont[k]})</button>`).join('');
 
-  renderGrupos();
-}
-
-function renderGrupos() {
-  const alvo = $('#grupos-etapa');
   const lista = estado.filtroRag
     ? estado.projetos.filter((p) => calcRag(p).k === estado.filtroRag)
     : estado.projetos;
 
-  const etapas = [...ETAPAS, ...new Set(lista.map((p) => p.etapa))].filter((v, i, a) => a.indexOf(v) === i);
-
-  alvo.innerHTML = etapas.map((etapa) => {
+  $('#kanban').innerHTML = ETAPAS.map((etapa) => {
     const ps = lista.filter((p) => p.etapa === etapa)
       .sort((a, b) => (a.prioridade - b.prioridade) || (a.codigo || '').localeCompare(b.codigo || ''));
-    if (!ps.length) return '';
+    const horas = ps.reduce((s, p) => s + Number(p.horas_mes || 0), 0);
     return `
-      <div class="grupo">
-        <div class="grupo-cab">
+      <section class="kcol" data-etapa="${esc(etapa)}">
+        <header class="kcol-cab">
           <h4>${esc(etapa)}</h4>
           <span class="cont">${ps.length}</span>
-          <span class="risco"></span>
+          ${horas ? `<span class="kcol-horas">${fmtNum(horas, 1)} h/mês</span>` : ''}
+        </header>
+        <div class="kcol-corpo">
+          ${ps.map(cardKanban).join('') || '<p class="kvazio">Solte um projeto aqui</p>'}
         </div>
-        <div class="cards">${ps.map(cardProjeto).join('')}</div>
-      </div>`;
-  }).join('') || '<p class="vazio">Nenhum projeto neste filtro.</p>';
+      </section>`;
+  }).join('');
 }
 
-function cardProjeto(p) {
+function cardKanban(p) {
   const r = calcRag(p);
   return `
-    <article class="card ${RAG[r.k].cls}" data-abrir="${p.id}">
-      <div class="card-topo">
+    <article class="kcard ${RAG[r.k].cls}" draggable="true" data-id="${p.id}">
+      <div class="kcard-topo">
         <span class="card-cod">${esc(p.codigo || '—')}</span>
-        <span class="pill ${RAG[r.k].cls}">${RAG[r.k].nome}</span>
+        <span class="pill ${RAG[r.k].cls}" title="${esc(r.motivo)}">${RAG[r.k].nome}</span>
       </div>
-      <h5>${esc(p.nome)}</h5>
-      <div class="card-meta">
-        <span><b>${esc(p.responsavel || 'Sem responsável')}</b></span>
-        <span>${esc(p.status)}</span>
+      <h5 data-abrir="${p.id}" title="Abrir a ficha completa">${esc(p.nome)}</h5>
+      <div class="kcard-meta">
+        <span>${esc(p.responsavel || 'sem responsável')}</span>
         ${p.horas_mes ? `<span>${fmtNum(p.horas_mes, 1)} h/mês</span>` : ''}
-        <span>Previsão: <b>${fmtData(p.data_prevista)}</b></span>
+        <span>${fmtData(p.data_prevista)}</span>
       </div>
-      ${p.proximo_passo ? `<p class="card-passo">→ ${esc(p.proximo_passo)}</p>` : ''}
-      <div class="progresso-rot"><span>Progresso</span><span>${p.progresso}%</span></div>
-      <div class="progresso"><span style="width:${p.progresso}%"></span></div>
+      <select class="kcard-status" data-status="${p.id}" draggable="false" title="Mudar o status">
+        ${STATUS.map((s) => `<option${s === p.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}
+      </select>
+      <div class="kcard-prog">
+        <button class="kbtn" data-prog="${p.id}" data-delta="-10" title="Diminuir 10%">−</button>
+        <div class="progresso"><span style="width:${p.progresso}%"></span></div>
+        <span class="kprog-num">${p.progresso}%</span>
+        <button class="kbtn" data-prog="${p.id}" data-delta="10" title="Aumentar 10%">+</button>
+      </div>
+      ${p.proximo_passo ? `<p class="kcard-passo" data-abrir="${p.id}">→ ${esc(p.proximo_passo)}</p>` : ''}
     </article>`;
 }
+
+// ------------------------------------------------- arrastar e soltar
+let arrastando = null;
+
+function ligarQuadro() {
+  const kb = $('#kanban');
+
+  kb.addEventListener('dragstart', (e) => {
+    const card = e.target.closest('.kcard');
+    if (!card) return;
+    arrastando = card.dataset.id;
+    card.classList.add('arrastando');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', arrastando);
+  });
+
+  kb.addEventListener('dragend', () => {
+    $$('.kcard').forEach((c) => c.classList.remove('arrastando'));
+    $$('.kcol').forEach((c) => c.classList.remove('alvo'));
+    arrastando = null;
+  });
+
+  kb.addEventListener('dragover', (e) => {
+    const col = e.target.closest('.kcol');
+    if (!col || !arrastando) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    $$('.kcol').forEach((c) => c.classList.toggle('alvo', c === col));
+  });
+
+  kb.addEventListener('drop', (e) => {
+    const col = e.target.closest('.kcol');
+    if (!col || !arrastando) return;
+    e.preventDefault();
+    const id = arrastando;
+    arrastando = null;
+    $$('.kcol').forEach((c) => c.classList.remove('alvo'));
+    mudarCampo(id, { etapa: col.dataset.etapa });
+  });
+
+  // status muda direto no card
+  kb.addEventListener('change', (e) => {
+    const sel = e.target.closest('[data-status]');
+    if (sel) mudarCampo(sel.dataset.status, { status: sel.value });
+  });
+
+  // progresso em passos de 10%
+  kb.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-prog]');
+    if (!btn) return;
+    e.stopPropagation();
+    const p = estado.projetos.find((x) => x.id === btn.dataset.prog);
+    if (!p) return;
+    const novo = Math.min(100, Math.max(0, p.progresso + Number(btn.dataset.delta)));
+    if (novo !== p.progresso) mudarCampo(p.id, { progresso: novo });
+  });
+}
+
+// Aplica a mudança na tela na hora e só depois grava. Se o banco recusar,
+// volta ao estado anterior — a tela nunca mente sobre o que foi salvo.
+async function mudarCampo(id, campos) {
+  const p = estado.projetos.find((x) => x.id === id);
+  if (!p) return;
+
+  const antes = {};
+  Object.keys(campos).forEach((k) => { antes[k] = p[k]; });
+  if (Object.keys(campos).every((k) => p[k] === campos[k])) return;
+
+  Object.assign(p, campos);
+  renderVisao();          // atualiza KPIs, semáforo e o quadro de uma vez
+
+  try {
+    await salvarProjeto(id, campos);
+    await carregarTudo();
+  } catch (err) {
+    Object.assign(p, antes);
+    renderVisao();
+    toast('Não foi possível salvar: ' + err.message, true);
+  }
+}
+
+ligarQuadro();
 
 // =====================================================================
 // CRONOGRAMA (Gantt)

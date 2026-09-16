@@ -191,34 +191,64 @@ table{border-collapse:collapse;width:100%}
 .lista-atencao .quando{font-size:11.5px;font-weight:700;white-space:nowrap}
 .vazio{color:var(--cinza-claro);font-size:13px;padding:10px 0}
 
-/* ======================================================= CARDS / ETAPA */
-.grupo{margin-bottom:28px}
-.grupo-cab{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-.grupo-cab h4{font-size:11.5px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--cinza)}
-.grupo-cab .cont{font-size:11px;font-weight:700;color:var(--cinza-claro);
-  background:var(--neutro-luz);padding:2px 8px;border-radius:20px}
-.grupo-cab .risco{flex:1 1 auto;height:1px;background:var(--linha)}
-
-.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(285px,1fr));gap:12px}
-.card{
-  background:var(--branco);border:1px solid var(--linha);border-radius:var(--raio-g);
-  padding:16px 17px;cursor:pointer;position:relative;overflow:hidden;
-  transition:transform .13s,box-shadow .13s,border-color .13s;
+/* ====================================================== QUADRO (KANBAN) */
+.kanban{
+  display:grid;grid-template-columns:repeat(4,minmax(260px,1fr));gap:14px;
+  align-items:start;overflow-x:auto;padding-bottom:8px;
 }
-.card:hover{transform:translateY(-2px);box-shadow:var(--sombra);border-color:var(--cinza-claro)}
-.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px}
-.card.v::before{background:var(--verde)}
-.card.a::before{background:var(--ambar)}
-.card.r::before{background:var(--vermelho)}
-.card.n::before{background:var(--neutro)}
+.kcol{background:var(--neutro-luz);border-radius:var(--raio-g);padding:12px;
+  transition:background .15s,outline-color .15s;outline:2px dashed transparent;outline-offset:-4px}
+.kcol.alvo{background:var(--amarelo-luz);outline-color:var(--amarelo-esc)}
+.kcol-cab{display:flex;align-items:center;gap:8px;padding:2px 4px 12px}
+.kcol-cab h4{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--grafite)}
+.kcol-cab .cont{font-size:10.5px;font-weight:800;color:var(--cinza);
+  background:var(--branco);padding:1px 7px;border-radius:20px}
+.kcol-horas{margin-left:auto;font-size:10.5px;font-weight:700;color:var(--cinza-claro);white-space:nowrap}
+.kcol-corpo{display:flex;flex-direction:column;gap:10px;min-height:90px}
+.kvazio{font-size:12px;color:var(--cinza-claro);text-align:center;padding:26px 8px;
+  border:1px dashed var(--linha);border-radius:var(--raio)}
 
-.card-topo{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}
+.kcard{
+  background:var(--branco);border:1px solid var(--linha);border-radius:var(--raio);
+  padding:12px 13px;position:relative;overflow:hidden;cursor:grab;
+  transition:box-shadow .13s,border-color .13s;
+}
+.kcard:hover{box-shadow:var(--sombra);border-color:var(--cinza-claro)}
+.kcard:active{cursor:grabbing}
+.kcard.arrastando{opacity:.4}
+.kcard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px}
+.kcard.v::before{background:var(--verde)}
+.kcard.a::before{background:var(--ambar)}
+.kcard.r::before{background:var(--vermelho)}
+.kcard.n::before{background:var(--neutro)}
+
+.kcard-topo{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
 .card-cod{font-size:10.5px;font-weight:800;letter-spacing:.08em;color:var(--cinza-claro)}
-.card h5{font-size:14.5px;font-weight:700;line-height:1.3;margin-bottom:8px}
-.card-meta{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11.5px;color:var(--cinza);margin-bottom:12px}
-.card-meta b{color:var(--grafite);font-weight:600}
-.card-passo{font-size:12px;color:var(--grafite);background:var(--fundo);
-  padding:8px 10px;border-radius:8px;margin-bottom:12px;line-height:1.4}
+.kcard h5{font-size:13.5px;font-weight:700;line-height:1.3;margin-bottom:7px;cursor:pointer}
+.kcard h5:hover{text-decoration:underline}
+.kcard-meta{display:flex;flex-wrap:wrap;gap:3px 11px;font-size:11px;color:var(--cinza);margin-bottom:9px}
+
+.kcard-status{
+  width:100%;padding:5px 8px;margin-bottom:9px;font-size:11.5px;font-weight:600;
+  border:1px solid var(--linha);border-radius:7px;background:var(--fundo);cursor:pointer;
+}
+.kcard-status:hover{border-color:var(--cinza-claro);background:var(--branco)}
+.kcard-status:focus{outline:2px solid var(--amarelo);outline-offset:-1px}
+
+.kcard-prog{display:flex;align-items:center;gap:7px}
+.kcard-prog .progresso{flex:1 1 auto}
+.kprog-num{font-size:10.5px;font-weight:700;color:var(--cinza);min-width:30px;text-align:right;
+  font-variant-numeric:tabular-nums}
+.kbtn{
+  width:20px;height:20px;flex:0 0 auto;border-radius:6px;background:var(--fundo);
+  color:var(--grafite);font-size:14px;font-weight:700;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+}
+.kbtn:hover{background:var(--amarelo);color:var(--preto)}
+
+.kcard-passo{font-size:11.5px;color:var(--grafite);background:var(--fundo);
+  padding:7px 9px;border-radius:7px;margin-top:9px;line-height:1.35;cursor:pointer}
+.kcard-passo:hover{background:var(--amarelo-luz)}
 
 .pill{
   display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:20px;
