@@ -165,6 +165,11 @@
         <button class="btn-texto" id="btn-marcar-lido">Marcar tudo como lido</button>
       </div>
 
+      <div class="painel largo destaque-mencoes" id="painel-mencoes" hidden>
+        <h3>Marcaram você</h3>
+        <ul class="lista-mencoes" id="lista-mencoes"></ul>
+      </div>
+
       <div class="painel-duplo notif">
         <div class="painel">
           <h3>Alertas automáticos</h3>
@@ -174,7 +179,10 @@
         <div class="painel">
           <h3>Mural</h3>
           <form id="form-recado" class="form-recado">
-            <textarea id="recado-texto" rows="2" placeholder="Escreva um recado para a equipe…"></textarea>
+            <div class="campo-mencao">
+              <textarea id="recado-texto" rows="2" placeholder="Escreva um recado… digite @ para marcar alguém"></textarea>
+              <ul class="mencoes" id="mencoes-recado" hidden></ul>
+            </div>
             <button type="submit" class="btn-primario pequeno">Publicar</button>
           </form>
           <ul class="lista-recados" id="lista-recados"></ul>
@@ -297,7 +305,10 @@
     <div class="modal-comentarios">
       <h4>Comentários do projeto</h4>
       <form id="form-comentario" class="form-recado">
-        <textarea id="comentario-texto" rows="2" placeholder="Adicionar um comentário…"></textarea>
+        <div class="campo-mencao">
+          <textarea id="comentario-texto" rows="2" placeholder="Adicionar um comentário… digite @ para marcar alguém"></textarea>
+          <ul class="mencoes" id="mencoes-comentario" hidden></ul>
+        </div>
         <button type="submit" class="btn-primario pequeno">Enviar</button>
       </form>
       <ul class="lista-recados" id="lista-comentarios"></ul>

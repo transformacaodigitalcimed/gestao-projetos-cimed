@@ -84,6 +84,84 @@ function toast(msg, erro = false) {
 }
 
 // =====================================================================
+// MENÇÕES — escrever "@Melissa" num comentário marca a pessoa. Nada de
+// tabela nova: a menção é lida do próprio texto, comparando com PESSOAS.
+// =====================================================================
+const MENCIONAVEIS = [...new Set(Object.values(PESSOAS))];
+
+const escapaRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// devolve os nomes marcados num texto
+function mencionados(texto) {
+  return MENCIONAVEIS.filter((n) =>
+    new RegExp('@' + escapaRegex(n) + '\\b', 'i').test(texto || ''));
+}
+
+const mencionaMim = (texto) =>
+  mencionados(texto).some((n) => n.toLowerCase() === estado.nome.toLowerCase());
+
+// texto seguro + as menções destacadas
+function textoComMencoes(texto) {
+  let html = esc(texto);
+  MENCIONAVEIS.forEach((n) => {
+    const re = new RegExp('@' + escapaRegex(n) + '\\b', 'gi');
+    const minha = n.toLowerCase() === estado.nome.toLowerCase();
+    html = html.replace(re, (m) => `<b class="mencao${minha ? ' eu' : ''}">${m}</b>`);
+  });
+  return html;
+}
+
+// autocomplete: digitar "@" abre a lista de pessoas
+function ligarMencoes(txtSel, listaSel) {
+  const txt = $(txtSel);
+  const lista = $(listaSel);
+  let opcoes = [];
+  let ativo = 0;
+
+  const fechar = () => { lista.hidden = true; opcoes = []; };
+
+  const desenhar = () => {
+    if (!opcoes.length) return fechar();
+    lista.innerHTML = opcoes.map((n, i) =>
+      `<li class="${i === ativo ? 'ativo' : ''}" data-nome="${esc(n)}">@${esc(n)}</li>`).join('');
+    lista.hidden = false;
+  };
+
+  const inserir = (nome) => {
+    const pos = txt.selectionStart;
+    const antes = txt.value.slice(0, pos).replace(/@(\w*)$/, '@' + nome + ' ');
+    txt.value = antes + txt.value.slice(pos);
+    txt.focus();
+    txt.setSelectionRange(antes.length, antes.length);
+    fechar();
+  };
+
+  txt.addEventListener('input', () => {
+    const trecho = txt.value.slice(0, txt.selectionStart).match(/@(\w*)$/);
+    if (!trecho) return fechar();
+    const busca = trecho[1].toLowerCase();
+    opcoes = MENCIONAVEIS.filter((n) => n.toLowerCase().startsWith(busca));
+    ativo = 0;
+    desenhar();
+  });
+
+  txt.addEventListener('keydown', (e) => {
+    if (lista.hidden || !opcoes.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); ativo = (ativo + 1) % opcoes.length; desenhar(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); ativo = (ativo - 1 + opcoes.length) % opcoes.length; desenhar(); }
+    else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); inserir(opcoes[ativo]); }
+    else if (e.key === 'Escape') { e.stopPropagation(); fechar(); }
+  });
+
+  lista.addEventListener('mousedown', (e) => {
+    const li = e.target.closest('[data-nome]');
+    if (li) { e.preventDefault(); inserir(li.dataset.nome); }
+  });
+
+  txt.addEventListener('blur', () => setTimeout(fechar, 120));
+}
+
+// =====================================================================
 // SEMÁFORO (RAG) — critério objetivo, calculado pela data. Ninguém escolhe
 // a cor na mão: verde = no prazo, amarelo = precisa de decisão,
 // vermelho = compromisso de data quebrado.
@@ -333,6 +411,10 @@ function renderQuadro() {
 
 function cardKanban(p) {
   const r = calcRag(p);
+  const coments = estado.comentarios.filter((c) => c.projeto_id === p.id);
+  const corte = estado.lidoAte ? new Date(estado.lidoAte) : new Date(0);
+  const chamou = coments.some((c) =>
+    c.autor !== estado.nome && mencionaMim(c.texto) && new Date(c.criado_em) > corte);
   return `
     <article class="kcard ${RAG[r.k].cls}" draggable="true" data-id="${p.id}">
       <div class="kcard-topo">
@@ -344,6 +426,8 @@ function cardKanban(p) {
         <span>${esc(p.responsavel || 'sem responsável')}</span>
         ${p.horas_mes ? `<span>${fmtNum(p.horas_mes, 1)} h/mês</span>` : ''}
         <span>${fmtData(p.data_prevista)}</span>
+        ${chamou ? '<span class="kmencao" data-abrir="' + p.id + '">@você</span>'
+          : coments.length ? `<span class="kcoment">${coments.length} coment.</span>` : ''}
       </div>
       <select class="kcard-status" data-status="${p.id}" draggable="false" title="Mudar o status">
         ${STATUS.map((s) => `<option${s === p.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}
@@ -617,6 +701,28 @@ function renderNotificacoes() {
     </li>`).join('')
     : '<li class="vazio">Nenhum alerta. Todos os projetos com prazo definido estão no verde.</li>';
 
+  // menções dirigidas a quem está logado
+  const corteM = estado.lidoAte ? new Date(estado.lidoAte) : new Date(0);
+  const minhas = estado.comentarios
+    .filter((c) => c.autor !== estado.nome && mencionaMim(c.texto))
+    .slice(0, 12);
+
+  $('#painel-mencoes').hidden = !minhas.length;
+  $('#lista-mencoes').innerHTML = minhas.map((c) => {
+    const p = estado.projetos.find((x) => x.id === c.projeto_id);
+    const nova = new Date(c.criado_em) > corteM;
+    return `
+      <li class="${nova ? 'nova' : ''}">
+        <div class="cab">
+          <span class="autor">${esc(c.autor)}</span>
+          <span class="onde">${p ? `em <b data-abrir="${p.id}">${esc(p.nome)}</b>` : 'no mural'}</span>
+          <span class="quando">${fmtQuando(c.criado_em)}</span>
+          ${nova ? '<span class="tag-nova">nova</span>' : ''}
+        </div>
+        <div class="texto">${textoComMencoes(c.texto)}</div>
+      </li>`;
+  }).join('');
+
   const recados = estado.comentarios.filter((c) => !c.projeto_id);
   $('#lista-recados').innerHTML = recados.length ? recados.map(itemRecado).join('')
     : '<li class="vazio">Nenhum recado ainda.</li>';
@@ -650,9 +756,12 @@ function itemRecado(c) {
         <span class="autor">${esc(c.autor)}</span>
         <span class="quando">${fmtQuando(c.criado_em)}</span>
       </div>
-      <div class="texto">${esc(c.texto)}</div>
+      <div class="texto">${textoComMencoes(c.texto)}</div>
     </li>`;
 }
+
+ligarMencoes('#recado-texto', '#mencoes-recado');
+ligarMencoes('#comentario-texto', '#mencoes-comentario');
 
 $('#form-recado').addEventListener('submit', async (e) => {
   e.preventDefault();
