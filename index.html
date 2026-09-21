@@ -5,14 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gestão de Projetos · CIMED</title>
 <meta name="description" content="Painel de acompanhamento dos projetos de transformação digital do RH CIMED.">
-<link rel="icon" type="image/svg+xml" href="favicon.svg?v=5">
-<link rel="apple-touch-icon" href="favicon.svg?v=5">
+<link rel="icon" type="image/svg+xml" href="favicon.svg?v=8">
+<link rel="apple-touch-icon" href="favicon.svg?v=8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- O ?v= força o navegador a buscar a versão nova em vez da guardada em cache.
      SEMPRE que alterar style.css ou app.js, some 1 nos dois números abaixo. -->
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
 
@@ -42,6 +42,23 @@
       <p id="login-erro" class="erro" hidden></p>
     </form>
 
+    <p class="login-rodape">Acesso restrito · Material confidencial CIMED</p>
+  </div>
+</div>
+
+<!-- ===================================================== SEM ACESSO -->
+<!-- Conta autenticada mas sem perfil cadastrado: não vê nada. -->
+<div id="tela-sem-acesso" class="login" hidden>
+  <div class="login-card sem-acesso">
+    <svg class="login-logo"><use href="#logo-cimed"></use></svg>
+    <p class="login-eyebrow"><span class="dot vermelho"></span> Acesso não liberado</p>
+    <h1>Esta conta não tem acesso</h1>
+    <p class="login-sub">
+      O login funcionou, mas <strong id="email-sem-acesso"></strong> não está cadastrada
+      neste sistema. Nenhuma informação de projeto é carregada.
+    </p>
+    <p class="login-sub">Fale com a Josianny para liberar o acesso.</p>
+    <button type="button" class="btn-primario" id="btn-sair-sem-acesso">Sair</button>
     <p class="login-rodape">Acesso restrito · Material confidencial CIMED</p>
   </div>
 </div>
@@ -153,6 +170,7 @@
               <th data-ord="data_prevista">Previsão</th>
               <th data-ord="progresso" class="num">Progresso</th>
               <th data-ord="rag">Semáforo</th>
+              <th data-ord="compliance">Compliance</th>
             </tr>
           </thead>
           <tbody id="tabela-corpo"></tbody>
@@ -175,7 +193,8 @@
 
       <div class="painel-duplo notif">
         <div class="painel">
-          <h3>Alertas automáticos</h3>
+          <h3 id="titulo-alertas">Alertas automáticos</h3>
+          <p class="dica-bloco">Situação de prazo, recalculada a cada abertura. Não é "novidade", então não entra no contador da aba.</p>
           <ul class="lista-alertas" id="lista-alertas"></ul>
         </div>
 
@@ -225,8 +244,13 @@
       </div>
 
       <div class="campo largo">
-        <label for="f-descricao">Descrição</label>
-        <textarea id="f-descricao" name="descricao" rows="3"></textarea>
+        <label for="f-descricao">
+          Descrição
+          <button type="button" class="btn-ditar" data-ditar="f-descricao" hidden>
+            <span class="ponto"></span><span class="rot">Ditar</span>
+          </button>
+        </label>
+        <textarea id="f-descricao" name="descricao" rows="4"></textarea>
       </div>
 
       <div class="campo">
@@ -291,19 +315,56 @@
       </div>
 
       <div class="campo largo">
-        <label for="f-observacoes">Observações</label>
-        <textarea id="f-observacoes" name="observacoes" rows="2"></textarea>
+        <label for="f-observacoes">
+          Observações
+          <button type="button" class="btn-ditar" data-ditar="f-observacoes" hidden>
+            <span class="ponto"></span><span class="rot">Ditar</span>
+          </button>
+        </label>
+        <textarea id="f-observacoes" name="observacoes" rows="4"></textarea>
       </div>
 
       <div class="modal-acoes">
         <button type="button" class="btn-perigo" id="btn-excluir">Excluir</button>
         <div class="acoes-dir">
-          <button type="button" class="btn-texto" data-fechar>Cancelar</button>
-          <button type="submit" class="btn-primario">Salvar</button>
+          <span id="aviso-somente-leitura" class="aviso-leitura" hidden>
+            Somente leitura · você responde o bloco Compliance abaixo
+          </span>
+          <button type="button" class="btn-texto" data-fechar>Fechar</button>
+          <button type="submit" class="btn-primario" id="btn-salvar-projeto">Salvar</button>
         </div>
       </div>
       <p id="modal-erro" class="erro" hidden></p>
     </form>
+
+    <!-- --------------------------------------------- COMPLIANCE -->
+    <div class="bloco-compliance" id="bloco-compliance">
+      <h4>Compliance</h4>
+      <p class="dica-bloco">Preenchido pelo time de Compliance: se precisam acompanhar este projeto.</p>
+      <div class="linha-compliance">
+        <select id="f-compliance">
+          <option value="">A definir</option>
+          <option value="sim">Sim — Compliance acompanha</option>
+          <option value="nao">Não é necessário</option>
+        </select>
+        <span class="compliance-quem" id="compliance-quem"></span>
+      </div>
+      <textarea id="f-compliance-obs" rows="2"
+        placeholder="O que precisa ser observado, qual norma se aplica, quem participa…"></textarea>
+      <button type="button" class="btn-primario pequeno" id="btn-salvar-compliance">Salvar Compliance</button>
+    </div>
+
+    <!-- ------------------------------------------------- ANEXOS -->
+    <div class="modal-anexos" id="modal-anexos">
+      <h4>Anexos <span class="dica-bloco">transcrições, atas, planilhas, PDFs</span></h4>
+      <label class="zona-anexo" id="zona-anexo">
+        <input type="file" id="input-anexo" multiple hidden>
+        <strong>Clique para escolher arquivos</strong>
+        <small id="anexo-limite"></small>
+      </label>
+      <p class="anexo-status" id="anexo-status" hidden></p>
+      <ul class="lista-anexos" id="lista-anexos"></ul>
+    </div>
 
     <div class="modal-comentarios">
       <h4>Comentários do projeto</h4>
@@ -321,6 +382,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="app.js?v=5"></script>
+<script type="module" src="app.js?v=8"></script>
 </body>
 </html>

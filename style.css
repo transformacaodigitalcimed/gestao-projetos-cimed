@@ -29,6 +29,9 @@
      projeto saudável com projeto que já saiu */
   --entregue:     #0A6B4F;
   --entregue-luz: #DFF0E8;
+  /* compliance: azul, para não disputar leitura com o semáforo */
+  --compliance:     #2B5FA8;
+  --compliance-luz: #E5ECF8;
 
   --raio:   10px;
   --raio-g: 14px;
@@ -88,6 +91,13 @@ table{border-collapse:collapse;width:100%}
 .login-card input:focus{outline:2px solid var(--amarelo);outline-offset:-1px;border-color:var(--amarelo-esc)}
 .login-rodape{margin-top:22px;padding-top:16px;border-top:1px solid var(--linha);
   font-size:11px;color:var(--cinza-claro);text-align:center}
+
+/* conta autenticada, mas fora da lista de acesso */
+.login-card.sem-acesso::before{background:var(--vermelho)}
+.login-eyebrow .dot.vermelho{background:var(--vermelho)}
+.login-card.sem-acesso .login-sub{margin-bottom:14px}
+.login-card.sem-acesso .login-sub strong{color:var(--preto);font-weight:700;word-break:break-all}
+.login-card.sem-acesso .btn-primario{margin-top:8px}
 
 /* ============================================================ BOTÕES */
 .btn-primario{
@@ -468,6 +478,100 @@ table{border-collapse:collapse;width:100%}
 
 .modal-comentarios{padding:4px 26px 26px;border-top:1px solid var(--linha)}
 .modal-comentarios h4{font-size:13px;font-weight:700;margin:18px 0 12px}
+
+/* ============================================== DITADO (fala → texto) */
+.btn-ditar{
+  display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:20px;
+  background:var(--neutro-luz);color:var(--grafite);
+  font-size:10.5px;font-weight:700;letter-spacing:.02em;
+}
+.btn-ditar:hover{background:var(--amarelo-luz);color:var(--preto)}
+.btn-ditar .ponto{width:7px;height:7px;border-radius:50%;background:var(--cinza);flex:0 0 auto}
+.btn-ditar.gravando{background:var(--vermelho-luz);color:var(--vermelho)}
+.btn-ditar.gravando .ponto{background:var(--vermelho);animation:pulsa 1.2s infinite}
+@keyframes pulsa{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* ======================================================== COMPLIANCE */
+.dica-bloco{font-size:11.5px;color:var(--cinza-claro);font-weight:500;line-height:1.4}
+
+.bloco-compliance{
+  padding:18px 26px 22px;border-top:1px solid var(--linha);
+  border-left:4px solid var(--compliance);background:var(--compliance-luz);
+}
+.bloco-compliance h4{font-size:13px;font-weight:700;margin-bottom:4px}
+.bloco-compliance .dica-bloco{margin-bottom:12px}
+.linha-compliance{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.linha-compliance select{
+  padding:8px 11px;border:1px solid var(--linha);border-radius:var(--raio);
+  background:var(--branco);font-weight:600;font-size:13px;
+}
+.compliance-quem{font-size:11.5px;color:var(--cinza)}
+.bloco-compliance textarea{
+  width:100%;padding:9px 11px;margin-bottom:12px;resize:vertical;font-size:13px;
+  border:1px solid var(--linha);border-radius:var(--raio);background:var(--branco);
+}
+.bloco-compliance textarea:focus,.linha-compliance select:focus{outline:2px solid var(--compliance);outline-offset:-1px}
+
+.pill.comp.sim{background:var(--compliance-luz);color:var(--compliance)}
+.pill.comp.nao{background:var(--neutro-luz);color:var(--neutro)}
+.comp-vazio{font-size:11.5px;color:var(--cinza-claro)}
+.kcomp.sim{background:var(--compliance-luz);color:var(--compliance);
+  font-weight:800;font-size:10px;padding:1px 6px;border-radius:4px}
+
+.kcard-compliance,.tabela-compliance{
+  padding:5px 8px;font-size:11.5px;font-weight:700;cursor:pointer;
+  border:1px solid var(--linha);border-radius:7px;background:var(--branco);
+}
+.kcard-compliance{width:100%}
+.kcard-compliance:focus,.tabela-compliance:focus{outline:2px solid var(--compliance);outline-offset:-1px}
+.comp-sim{border-color:var(--compliance);color:var(--compliance);background:var(--compliance-luz)}
+.comp-nao{color:var(--neutro)}
+.comp-vazio{border-style:dashed}
+.kcard-estado{font-size:11.5px;font-weight:600;color:var(--cinza);margin-bottom:8px}
+
+.aviso-leitura{font-size:11.5px;color:var(--cinza);margin-right:4px}
+body.somente-compliance .kcard{cursor:default}
+body.somente-compliance .campo input:disabled,
+body.somente-compliance .campo select:disabled,
+body.somente-compliance .campo textarea:disabled{background:var(--fundo);color:var(--grafite);opacity:1}
+
+/* ============================================================ ANEXOS */
+.modal-anexos{padding:18px 26px 22px;border-top:1px solid var(--linha)}
+.modal-anexos h4{font-size:13px;font-weight:700;margin-bottom:12px;
+  display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+
+.zona-anexo{
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:18px;margin-bottom:12px;cursor:pointer;text-align:center;
+  border:1.5px dashed var(--linha);border-radius:var(--raio);background:var(--fundo);
+  transition:border-color .15s,background .15s;
+}
+.zona-anexo:hover{border-color:var(--amarelo-esc);background:var(--amarelo-luz)}
+.zona-anexo strong{font-size:13px;font-weight:700}
+.zona-anexo small{font-size:11px;color:var(--cinza-claro)}
+
+.anexo-status{font-size:12px;font-weight:600;margin-bottom:10px;color:var(--cinza)}
+.anexo-status.ok{color:var(--verde)}
+.anexo-status.erro{color:var(--vermelho)}
+
+.lista-anexos li{
+  display:flex;align-items:center;gap:10px;padding:9px 0;
+  border-bottom:1px solid var(--linha);font-size:12.5px;
+}
+.lista-anexos li:last-child{border-bottom:0}
+.anexo-nome{
+  flex:1 1 auto;text-align:left;font-size:13px;font-weight:600;color:var(--preto);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.anexo-nome:hover{text-decoration:underline}
+.anexo-info{font-size:11px;color:var(--cinza-claro);white-space:nowrap}
+.anexo-apagar{
+  width:22px;height:22px;flex:0 0 auto;border-radius:6px;color:var(--cinza);
+  font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;
+}
+.anexo-apagar:hover{background:var(--vermelho-luz);color:var(--vermelho)}
+.kanexo{color:var(--grafite);font-weight:600;cursor:pointer}
+.kanexo:hover{text-decoration:underline}
 
 /* ============================================================ TOAST */
 .toast{

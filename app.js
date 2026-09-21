@@ -5,7 +5,7 @@
 // =====================================================================
 
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { SUPABASE_URL, SUPABASE_ANON_KEY, PESSOAS, REGRAS } from './config.js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY, PESSOAS, REGRAS, LIMITE_ANEXO_MB } from './config.js';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -25,13 +25,39 @@ const ORDEM_RAG = ['r', 'a', 'v', 's', 'c'];
 
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
+const BUCKET = 'anexos-projetos';
+
+// =====================================================================
+// NÍVEIS DE ACESSO
+// 'gestao'    -> tudo.
+// 'controles' -> Compliance: veem Quadro e Projetos, não editam o projeto,
+//                só respondem se precisam acompanhar.
+// ⚠️ Isto esconde e trava a interface. NÃO é uma barreira de banco de
+//    dados: a RLS libera escrita para qualquer pessoa logada. Serve para
+//    dar clareza de papel a colegas, não para conter quem quer burlar.
+// =====================================================================
+const PAPEIS = {
+  gestao:    { abas: ['visao', 'quadro', 'cronograma', 'projetos', 'notificacoes'], editaProjeto: true },
+  controles: { abas: ['quadro', 'projetos'],                                       editaProjeto: false },
+};
+
+const podeEditar = () => PAPEIS[estado.papel]?.editaProjeto === true;
+
+const COMPLIANCE = {
+  sim: { rot: 'Compliance acompanha', cls: 'sim' },
+  nao: { rot: 'Compliance não precisa', cls: 'nao' },
+};
+const compChave = (v) => (v === true ? 'sim' : v === false ? 'nao' : '');
+
 // ----------------------------------------------------------------- ESTADO
 const estado = {
   usuario: null,
   nome: '',
+  papel: 'gestao',
   projetos: [],
   comentarios: [],
   historico: [],
+  anexos: [],
   lidoAte: null,
   view: 'visao',
   filtroRag: '',
@@ -88,7 +114,7 @@ function toast(msg, erro = false) {
 // MENÇÕES — escrever "@Melissa" num comentário marca a pessoa. Nada de
 // tabela nova: a menção é lida do próprio texto, comparando com PESSOAS.
 // =====================================================================
-const MENCIONAVEIS = [...new Set(Object.values(PESSOAS))];
+const MENCIONAVEIS = [...new Set(Object.values(PESSOAS).map((p) => p.nome))];
 
 const escapaRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -187,9 +213,30 @@ function calcRag(p) {
 // =====================================================================
 function nomeDe(email) {
   if (!email) return '';
-  if (PESSOAS[email]) return PESSOAS[email];
+  if (PESSOAS[email]?.nome) return PESSOAS[email].nome;
   const bruto = email.split('@')[0].split(/[._-]/)[0];
   return bruto.charAt(0).toUpperCase() + bruto.slice(1);
+}
+
+// Quem não está no config.js cai no papel mais restrito, nunca no mais
+// amplo: conta criada no Supabase e esquecida aqui não ganha acesso total.
+// O papel VALE O QUE ESTÁ NO BANCO (tabela perfis), porque é o banco que
+// aplica as travas.
+//
+// Devolve null quando a conta NÃO está cadastrada. E null significa
+// NENHUM acesso, não acesso reduzido: quem não está na lista não entra.
+//
+// O config.js só entra como reserva se a tabela perfis ainda não existir,
+// para o sistema não se trancar antes de a atualização do banco rodar.
+async function descobrirPapel(user) {
+  const { data, error } = await sb.from('perfis')
+    .select('papel').eq('user_id', user.id).maybeSingle();
+
+  if (error) {
+    console.warn('Tabela perfis indisponível, usando o config.js:', error.message);
+    return PESSOAS[user.email]?.papel || null;
+  }
+  return data?.papel || null;
 }
 
 $('#form-login').addEventListener('submit', async (e) => {
@@ -215,10 +262,12 @@ $('#form-login').addEventListener('submit', async (e) => {
   }
 });
 
-$('#btn-sair').addEventListener('click', async () => {
+async function sair() {
   await sb.auth.signOut();
   location.reload();
-});
+}
+$('#btn-sair').addEventListener('click', sair);
+$('#btn-sair-sem-acesso').addEventListener('click', sair);
 
 sb.auth.onAuthStateChange((_evt, sessao) => {
   if (sessao?.user) iniciar(sessao.user);
@@ -236,26 +285,53 @@ sb.auth.onAuthStateChange((_evt, sessao) => {
 
 async function iniciar(user) {
   if (estado.usuario) return;
+  const papel = await descobrirPapel(user);
+
+  // Conta autenticada mas fora da lista: para aqui. Nada é carregado.
+  if (!papel) {
+    $('#tela-login').hidden = true;
+    $('#email-sem-acesso').textContent = user.email;
+    $('#tela-sem-acesso').hidden = false;
+    return;
+  }
+
   estado.usuario = user;
   estado.nome = nomeDe(user.email);
+  estado.papel = papel;
 
   $('#tela-login').hidden = true;
   $('#app').hidden = false;
   $('#usuario').textContent = estado.nome;
+  if (estado.papel === 'controles') {
+    $('#usuario').textContent = estado.nome + ' · Compliance';
+  }
 
+  aplicarPapel();
   montarSelects();
   await carregarTudo();
   ligarTempoReal();
+}
+
+// Esconde as abas que o papel não alcança e trava o que ele não edita.
+function aplicarPapel() {
+  const abas = PAPEIS[estado.papel]?.abas || PAPEIS.gestao.abas;
+  $$('.nav-item').forEach((b) => { b.hidden = !abas.includes(b.dataset.view); });
+  if (!abas.includes(estado.view)) irPara(abas[0]);
+
+  const dono = podeEditar();
+  $('#btn-novo').hidden = !dono;
+  document.body.classList.toggle('somente-compliance', !dono);
 }
 
 // =====================================================================
 // DADOS
 // =====================================================================
 async function carregarTudo() {
-  const [proj, com, hist, leit] = await Promise.all([
+  const [proj, com, hist, anx, leit] = await Promise.all([
     sb.from('projetos').select('*').eq('arquivado', false),
     sb.from('comentarios').select('*').order('criado_em', { ascending: false }).limit(200),
     sb.from('historico').select('*').order('criado_em', { ascending: false }).limit(200),
+    sb.from('anexos').select('*').order('criado_em', { ascending: false }),
     sb.from('leituras').select('lido_ate').eq('user_id', estado.usuario.id).maybeSingle(),
   ]);
 
@@ -267,7 +343,10 @@ async function carregarTudo() {
   estado.projetos = proj.data || [];
   estado.comentarios = com.data || [];
   estado.historico = hist.data || [];
+  estado.anexos = anx.data || [];     // sem erro fatal: se a tabela ainda não existe, só não lista
   estado.lidoAte = leit.data?.lido_ate || null;
+
+  if (anx.error) console.warn('Anexos indisponíveis — rode o 03-anexos-e-controles.sql:', anx.error.message);
 
   renderTudo();
 }
@@ -412,12 +491,16 @@ function renderQuadro() {
 
 function cardKanban(p) {
   const r = calcRag(p);
+  const dono = podeEditar();
   const coments = estado.comentarios.filter((c) => c.projeto_id === p.id);
+  const nAnexos = estado.anexos.filter((a) => a.projeto_id === p.id).length;
   const corte = estado.lidoAte ? new Date(estado.lidoAte) : new Date(0);
   const chamou = coments.some((c) =>
     c.autor !== estado.nome && mencionaMim(c.texto) && new Date(c.criado_em) > corte);
+  const ck = compChave(p.compliance_necessario);
+
   return `
-    <article class="kcard ${RAG[r.k].cls}" draggable="true" data-id="${p.id}">
+    <article class="kcard ${RAG[r.k].cls}" ${dono ? 'draggable="true"' : ''} data-id="${p.id}">
       <div class="kcard-topo">
         <span class="card-cod">${esc(p.codigo || '—')}</span>
         <span class="pill ${RAG[r.k].cls}" title="${esc(r.motivo)}">${RAG[r.k].nome}</span>
@@ -427,20 +510,47 @@ function cardKanban(p) {
         <span>${esc(p.responsavel || 'sem responsável')}</span>
         ${p.horas_mes ? `<span>${fmtNum(p.horas_mes, 1)} h/mês</span>` : ''}
         <span>${fmtData(p.data_prevista)}</span>
-        ${chamou ? '<span class="kmencao" data-abrir="' + p.id + '">@você</span>'
+        ${nAnexos ? `<span class="kanexo" data-abrir="${p.id}">${nAnexos} anexo${nAnexos > 1 ? 's' : ''}</span>` : ''}
+        ${chamou ? `<span class="kmencao" data-abrir="${p.id}">@você</span>`
           : coments.length ? `<span class="kcoment">${coments.length} coment.</span>` : ''}
+        ${dono && ck === 'sim' ? '<span class="kcomp sim">Compliance</span>' : ''}
       </div>
-      <select class="kcard-status" data-status="${p.id}" draggable="false" title="Mudar o status">
-        ${STATUS.map((s) => `<option${s === p.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}
-      </select>
-      <div class="kcard-prog">
-        <button class="kbtn" data-prog="${p.id}" data-delta="-10" title="Diminuir 10%">−</button>
-        <div class="progresso"><span style="width:${p.progresso}%"></span></div>
-        <span class="kprog-num">${p.progresso}%</span>
-        <button class="kbtn" data-prog="${p.id}" data-delta="10" title="Aumentar 10%">+</button>
-      </div>
+      ${dono ? `
+        <select class="kcard-status" data-status="${p.id}" draggable="false" title="Mudar o status">
+          ${STATUS.map((s) => `<option${s === p.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}
+        </select>
+        <div class="kcard-prog">
+          <button class="kbtn" data-prog="${p.id}" data-delta="-10" title="Diminuir 10%">−</button>
+          <div class="progresso"><span style="width:${p.progresso}%"></span></div>
+          <span class="kprog-num">${p.progresso}%</span>
+          <button class="kbtn" data-prog="${p.id}" data-delta="10" title="Aumentar 10%">+</button>
+        </div>`
+      : `
+        <div class="kcard-estado">${esc(p.status)} · ${p.progresso}%</div>
+        ${selectCompliance(p, 'kcard-compliance')}`}
       ${p.proximo_passo ? `<p class="kcard-passo" data-abrir="${p.id}">→ ${esc(p.proximo_passo)}</p>` : ''}
     </article>`;
+}
+
+// O seletor que o time de Compliance responde. Mesmo HTML no card e na tabela.
+function selectCompliance(p, classe) {
+  const ck = compChave(p.compliance_necessario);
+  const op = (v, rot) => `<option value="${v}"${ck === v ? ' selected' : ''}>${rot}</option>`;
+  return `
+    <select class="${classe} comp-${ck || 'vazio'}" data-compliance="${p.id}" draggable="false"
+            title="${p.compliance_obs ? esc(p.compliance_obs) : 'Compliance precisa acompanhar?'}">
+      ${op('', 'Compliance: a definir')}
+      ${op('sim', 'Compliance: acompanhar')}
+      ${op('nao', 'Compliance: não precisa')}
+    </select>`;
+}
+
+function camposCompliance(valor) {
+  return {
+    compliance_necessario: valor === 'sim' ? true : valor === 'nao' ? false : null,
+    compliance_por: estado.nome,
+    compliance_em: new Date().toISOString(),
+  };
 }
 
 // ------------------------------------------------- arrastar e soltar
@@ -483,10 +593,12 @@ function ligarQuadro() {
     if (p) mudarCampo(id, camposParaEtapa(p, col.dataset.etapa));
   });
 
-  // status muda direto no card
+  // status e compliance mudam direto no card
   kb.addEventListener('change', (e) => {
-    const sel = e.target.closest('[data-status]');
-    if (sel) mudarCampo(sel.dataset.status, { status: sel.value });
+    const st = e.target.closest('[data-status]');
+    if (st) return mudarCampo(st.dataset.status, { status: st.value });
+    const cp = e.target.closest('[data-compliance]');
+    if (cp) return mudarCampo(cp.dataset.compliance, camposCompliance(cp.value));
   });
 
   // progresso em passos de 10%
@@ -630,9 +742,16 @@ function projetosFiltrados() {
   });
 
   const { campo, asc } = estado.ordem;
+  const valor = (p) => {
+    if (campo === 'rag') return ORDEM_RAG.indexOf(calcRag(p).k);
+    // "acompanhar" primeiro, depois "a definir", depois "não precisa"
+    if (campo === 'compliance') return p.compliance_necessario === true ? 0
+      : p.compliance_necessario === null || p.compliance_necessario === undefined ? 1 : 2;
+    return p[campo];
+  };
   lista.sort((a, b) => {
-    let x = campo === 'rag' ? ORDEM_RAG.indexOf(calcRag(a).k) : a[campo];
-    let y = campo === 'rag' ? ORDEM_RAG.indexOf(calcRag(b).k) : b[campo];
+    let x = valor(a);
+    let y = valor(b);
     if (x === null || x === undefined || x === '') return 1;
     if (y === null || y === undefined || y === '') return -1;
     if (typeof x === 'string') return asc ? x.localeCompare(y, 'pt-BR') : y.localeCompare(x, 'pt-BR');
@@ -677,8 +796,14 @@ function renderTabela() {
           </div>
         </td>
         <td><span class="pill ${RAG[r.k].cls}" title="${esc(r.motivo)}">${RAG[r.k].nome}</span></td>
+        <td>${podeEditar()
+          ? (compChave(p.compliance_necessario)
+              ? `<span class="pill comp ${COMPLIANCE[compChave(p.compliance_necessario)].cls}"
+                       title="${esc(p.compliance_obs || '')}">${COMPLIANCE[compChave(p.compliance_necessario)].rot}</span>`
+              : '<span class="comp-vazio">a definir</span>')
+          : selectCompliance(p, 'tabela-compliance')}</td>
       </tr>`;
-  }).join('') : '<tr><td colspan="9" class="vazio">Nenhum projeto encontrado com esses filtros.</td></tr>';
+  }).join('') : '<tr><td colspan="10" class="vazio">Nenhum projeto encontrado com esses filtros.</td></tr>';
 
   $('#contagem').textContent = `${lista.length} de ${estado.projetos.length} projetos`;
 }
@@ -757,16 +882,25 @@ function renderNotificacoes() {
     </li>`).join('')
     : '<li class="vazio">Nenhuma alteração registrada ainda.</li>';
 
-  // contador do sininho
+  // Contador da aba = só o que é NOVIDADE e ainda não foi lido.
+  // Os alertas de prazo ficam fora: eles não "se leem", são a situação
+  // atual do portfólio. Se entrassem aqui, "Marcar tudo como lido" nunca
+  // zeraria o número e pareceria que o botão não funciona.
   const corte = estado.lidoAte ? new Date(estado.lidoAte) : new Date(0);
   const novidades =
     estado.comentarios.filter((c) => new Date(c.criado_em) > corte && c.autor !== estado.nome).length +
     estado.historico.filter((h) => new Date(h.criado_em) > corte && h.autor !== estado.nome).length;
 
-  const total = alertas.filter((a) => a.r.k !== 's').length + novidades;
   const badge = $('#badge-notif');
-  badge.textContent = total > 99 ? '99+' : total;
-  badge.hidden = total === 0;
+  badge.textContent = novidades > 99 ? '99+' : novidades;
+  badge.hidden = novidades === 0;
+
+  const nPrazo = alertas.filter((a) => a.r.k !== 's').length;
+  $('#titulo-alertas').textContent = nPrazo
+    ? `Alertas automáticos (${nPrazo})`
+    : 'Alertas automáticos';
+
+  $('#btn-marcar-lido').hidden = novidades === 0;
 }
 
 function itemRecado(c) {
@@ -836,12 +970,62 @@ function abrirProjeto(id) {
   $('#lista-comentarios').innerHTML = doProjeto.length ? doProjeto.map(itemRecado).join('')
     : '<li class="vazio">Nenhum comentário neste projeto.</li>';
 
+  // ------------------------------------------------------- compliance
+  const dono = podeEditar();
+  $('#bloco-compliance').hidden = !p;
+  $('#f-compliance').value = p ? compChave(p.compliance_necessario) : '';
+  $('#f-compliance-obs').value = p?.compliance_obs || '';
+  $('#compliance-quem').textContent = p?.compliance_em
+    ? `${p.compliance_por || 'alguém'} · ${fmtQuando(p.compliance_em)}`
+    : '';
+
+  // ----------------------------------------------------------- anexos
+  $('#modal-anexos').hidden = !p;
+  $('#anexo-limite').textContent = `até ${LIMITE_ANEXO_MB} MB por arquivo`;
+  $('#anexo-status').hidden = true;
+  $('#zona-anexo').hidden = !dono;
+  renderAnexos(id);
+
+  // ------------------------------------------- travas por nível de acesso
+  [...$('#form-projeto').elements].forEach((el) => {
+    if (el.type !== 'submit' && el.type !== 'button') el.disabled = !dono;
+  });
+  $('#btn-excluir').hidden = !p || !dono;
+  $('#btn-salvar-projeto').hidden = !dono;
+  $('#aviso-somente-leitura').hidden = dono;
+  // sem permissão de editar, nada de microfone: o campo está travado
+  $$('[data-ditar]').forEach((b) => { b.hidden = !dono || !Reconhecimento; });
+  $('.modal-comentarios').hidden = !p;   // comentar é liberado para os dois papéis
+
   $('#modal').hidden = false;
   document.body.style.overflow = 'hidden';
-  setTimeout(() => $('#f-nome').focus(), 60);
+  if (dono) setTimeout(() => $('#f-nome').focus(), 60);
+}
+
+// ---------------------------------------------------- lista de anexos
+function renderAnexos(projetoId) {
+  const lista = estado.anexos.filter((a) => a.projeto_id === projetoId);
+  const dono = podeEditar();
+  $('#lista-anexos').innerHTML = lista.length ? lista.map((a) => `
+    <li>
+      <button type="button" class="anexo-nome" data-baixar="${a.id}" title="Abrir o arquivo">
+        ${esc(a.nome)}
+      </button>
+      <span class="anexo-info">${fmtTamanho(a.tamanho)} · ${esc(a.autor || '—')} · ${fmtQuando(a.criado_em)}</span>
+      ${dono ? `<button type="button" class="anexo-apagar" data-apagar-anexo="${a.id}" title="Remover">×</button>` : ''}
+    </li>`).join('')
+    : '<li class="vazio">Nenhum arquivo anexado.</li>';
+}
+
+function fmtTamanho(bytes) {
+  if (!bytes) return '—';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
 }
 
 function fecharModal() {
+  pararDitado();                 // não deixa o microfone ligado depois de fechar
   $('#modal').hidden = true;
   estado.editando = null;
   document.body.style.overflow = '';
@@ -913,8 +1097,178 @@ $('#form-comentario').addEventListener('submit', async (e) => {
 
 $('#btn-novo').addEventListener('click', () => abrirProjeto(null));
 
+// =====================================================================
+// COMPLIANCE — o bloco que o time de Controles responde
+// =====================================================================
+$('#btn-salvar-compliance').addEventListener('click', async () => {
+  if (!estado.editando) return;
+  const campos = camposCompliance($('#f-compliance').value);
+  campos.compliance_obs = $('#f-compliance-obs').value.trim() || null;
+  await mudarCampo(estado.editando, campos);
+  $('#compliance-quem').textContent = `${estado.nome} · agora`;
+  toast('Compliance atualizado');
+});
+
+// =====================================================================
+// ANEXOS — arquivos e transcrições de cada projeto
+// O bucket é privado: o download passa por um link temporário de 60 s.
+// =====================================================================
+const nomeSeguro = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .replace(/[^a-zA-Z0-9._-]/g, '_').slice(-120);
+
+$('#input-anexo').addEventListener('change', async (e) => {
+  const arquivos = [...e.target.files];
+  e.target.value = '';
+  if (!arquivos.length || !estado.editando) return;
+
+  const st = $('#anexo-status');
+  const limite = LIMITE_ANEXO_MB * 1048576;
+  const projeto = estado.editando;
+  let enviados = 0;
+
+  for (const arq of arquivos) {
+    st.hidden = false;
+    st.className = 'anexo-status';
+    st.textContent = `Enviando "${arq.name}"…`;
+
+    if (arq.size > limite) {
+      st.className = 'anexo-status erro';
+      st.textContent = `"${arq.name}" tem ${fmtTamanho(arq.size)} e o limite é ${LIMITE_ANEXO_MB} MB.`;
+      continue;
+    }
+
+    const caminho = `${projeto}/${Date.now()}-${nomeSeguro(arq.name)}`;
+    const up = await sb.storage.from(BUCKET).upload(caminho, arq);
+    if (up.error) {
+      st.className = 'anexo-status erro';
+      st.textContent = up.error.message.includes('Bucket not found')
+        ? 'O armazenamento ainda não existe. Rode o 03-anexos-e-controles.sql no Supabase.'
+        : `Falhou o envio de "${arq.name}": ${up.error.message}`;
+      continue;
+    }
+
+    const reg = await sb.from('anexos').insert({
+      projeto_id: projeto, nome: arq.name, caminho,
+      tamanho: arq.size, tipo: arq.type || null, autor: estado.nome,
+    });
+    if (reg.error) {
+      await sb.storage.from(BUCKET).remove([caminho]);   // não deixa arquivo órfão
+      st.className = 'anexo-status erro';
+      st.textContent = `Não registrei "${arq.name}": ${reg.error.message}`;
+      continue;
+    }
+    enviados++;
+  }
+
+  await carregarTudo();
+  renderAnexos(projeto);
+  if (enviados) {
+    st.className = 'anexo-status ok';
+    st.textContent = enviados === 1 ? '1 arquivo anexado.' : `${enviados} arquivos anexados.`;
+  }
+});
+
+$('#lista-anexos').addEventListener('click', async (e) => {
+  const abrir = e.target.closest('[data-baixar]');
+  if (abrir) {
+    const a = estado.anexos.find((x) => x.id === abrir.dataset.baixar);
+    if (!a) return;
+    const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(a.caminho, 60);
+    if (error || !data?.signedUrl) return toast('Não consegui abrir: ' + (error?.message || 'link inválido'), true);
+    window.open(data.signedUrl, '_blank', 'noopener');
+    return;
+  }
+
+  const apagar = e.target.closest('[data-apagar-anexo]');
+  if (apagar) {
+    const a = estado.anexos.find((x) => x.id === apagar.dataset.apagarAnexo);
+    if (!a || !confirm(`Remover "${a.nome}"? Não dá para desfazer.`)) return;
+    const rm = await sb.storage.from(BUCKET).remove([a.caminho]);
+    if (rm.error) return toast('Erro ao remover o arquivo: ' + rm.error.message, true);
+    const del = await sb.from('anexos').delete().eq('id', a.id);
+    if (del.error) return toast('Erro ao remover o registro: ' + del.error.message, true);
+    const projeto = a.projeto_id;
+    await carregarTudo();
+    renderAnexos(projeto);
+    toast('Anexo removido');
+  }
+});
+
+// =====================================================================
+// DITADO — fala vira texto nos campos grandes (Descrição e Observações)
+// Usa o reconhecimento de voz do próprio navegador.
+// =====================================================================
+const Reconhecimento = window.SpeechRecognition || window.webkitSpeechRecognition;
+let ditando = null;
+
+function ligarDitado() {
+  if (!Reconhecimento) return;    // navegador sem suporte: o botão fica escondido
+  $$('[data-ditar]').forEach((btn) => {
+    btn.hidden = false;
+    btn.addEventListener('click', () => (ditando ? pararDitado() : comecarDitado(btn)));
+  });
+}
+
+function comecarDitado(btn) {
+  const campo = $('#' + btn.dataset.ditar);
+  if (campo.disabled) return;
+
+  const rec = new Reconhecimento();
+  rec.lang = 'pt-BR';
+  rec.continuous = true;
+  rec.interimResults = true;
+
+  const base = campo.value;
+  let firme = '';
+  const junta = (a, b) => (a && b ? a.replace(/\s+$/, '') + ' ' + b.replace(/^\s+/, '') : a + b);
+
+  rec.onresult = (ev) => {
+    let parcial = '';
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const trecho = ev.results[i][0].transcript;
+      if (ev.results[i].isFinal) firme += trecho; else parcial += trecho;
+    }
+    campo.value = junta(junta(base, firme), parcial);
+    campo.scrollTop = campo.scrollHeight;
+  };
+
+  rec.onerror = (ev) => {
+    toast(ev.error === 'not-allowed'
+      ? 'Permita o microfone na barra de endereço do Chrome.'
+      : 'Ditado interrompido: ' + ev.error, true);
+    pararDitado();
+  };
+  rec.onend = () => { if (ditando) pararDitado(); };
+
+  ditando = { rec, btn };
+  btn.classList.add('gravando');
+  btn.querySelector('.rot').textContent = 'Gravando · clique para parar';
+  try { rec.start(); } catch { pararDitado(); }
+}
+
+function pararDitado() {
+  if (!ditando) return;
+  const { rec, btn } = ditando;
+  ditando = null;
+  try { rec.stop(); } catch { /* já estava parado */ }
+  btn.classList.remove('gravando');
+  btn.querySelector('.rot').textContent = 'Ditar';
+}
+
+ligarDitado();
+
 // ------------------------------------------------- abrir/fechar genéricos
+// A tabela também responde o Compliance, sem abrir a ficha.
+$('#tabela').addEventListener('change', (e) => {
+  const cp = e.target.closest('[data-compliance]');
+  if (cp) mudarCampo(cp.dataset.compliance, camposCompliance(cp.value));
+});
+
 document.addEventListener('click', (e) => {
+  // clique em campo de formulário nunca abre a ficha: senão mexer no
+  // seletor de Compliance dentro de uma linha da tabela abriria o modal
+  if (e.target.closest('select, input, textarea')) return;
+
   if (e.target.closest('[data-fechar]')) return fecharModal();
 
   const alvo = e.target.closest('[data-abrir]');
