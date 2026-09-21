@@ -30,8 +30,11 @@ export const PESSOAS = {
   'josianny.silva@grupocimed.com.br': { nome: 'Josianny', papel: 'gestao' },
   'melissa.dias@grupocimed.com.br':   { nome: 'Melissa',  papel: 'gestao' },
 
-  'TROCAR.compliance1@grupocimed.com.br': { nome: 'Compliance 1', papel: 'controles' },
-  'TROCAR.compliance2@grupocimed.com.br': { nome: 'Compliance 2', papel: 'controles' },
+  // Compliance · Renata de Souza Luz Moraes
+  'renata.moraes@grupocimed.com.br': { nome: 'Renata', papel: 'controles' },
+
+  // Quando entrar a 2ª pessoa de Compliance, copie a linha acima com o
+  // e-mail dela e cadastre o perfil no Supabase (ver README).
 };
 
 // Regras do semáforo (RAG). Ajuste os dias se quiser outro critério.
