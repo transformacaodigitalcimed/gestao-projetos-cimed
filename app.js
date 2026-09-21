@@ -10,14 +10,15 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY, PESSOAS, REGRAS } from './config.js';
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ------------------------------------------------------------- CONSTANTES
-const ETAPAS = ['Prioritário', 'Protótipo e ajustes', 'Entregue', 'Fila'];
+// A ordem manda no Quadro: o que exige ação primeiro, o que já saiu no fim.
+const ETAPAS = ['Prioritário', 'Protótipo e ajustes', 'Fila', 'Entregue'];
 const STATUS = ['Não iniciado', 'Em mapeamento', 'Em construção', 'Em ajustes', 'Entregue', 'Pausado'];
 
 const RAG = {
   r: { nome: 'Atrasado',  cls: 'r', cor: 'var(--vermelho)' },
   a: { nome: 'Atenção',   cls: 'a', cor: 'var(--ambar)' },
   v: { nome: 'No prazo',  cls: 'v', cor: 'var(--verde)' },
-  c: { nome: 'Concluído', cls: 'n', cor: 'var(--grafite)' },
+  c: { nome: 'Entregue',  cls: 'c', cor: 'var(--entregue)' },
   s: { nome: 'Sem prazo', cls: 'n', cor: 'var(--cinza-claro)' },
 };
 const ORDEM_RAG = ['r', 'a', 'v', 's', 'c'];
@@ -478,7 +479,8 @@ function ligarQuadro() {
     const id = arrastando;
     arrastando = null;
     $$('.kcol').forEach((c) => c.classList.remove('alvo'));
-    mudarCampo(id, { etapa: col.dataset.etapa });
+    const p = estado.projetos.find((x) => x.id === id);
+    if (p) mudarCampo(id, camposParaEtapa(p, col.dataset.etapa));
   });
 
   // status muda direto no card
@@ -497,6 +499,24 @@ function ligarQuadro() {
     const novo = Math.min(100, Math.max(0, p.progresso + Number(btn.dataset.delta)));
     if (novo !== p.progresso) mudarCampo(p.id, { progresso: novo });
   });
+}
+
+// Soltar na coluna "Entregue" é dizer que o projeto saiu — então o card
+// passa a 100%, ganha data de entrega e o semáforo acompanha. Tirar de lá
+// desfaz isso, senão ele ficaria verde para sempre.
+function camposParaEtapa(p, etapa) {
+  const campos = { etapa };
+  const hoje = `${HOJE.getFullYear()}-${String(HOJE.getMonth() + 1).padStart(2, '0')}-${String(HOJE.getDate()).padStart(2, '0')}`;
+
+  if (etapa === 'Entregue' && p.etapa !== 'Entregue') {
+    campos.status = 'Entregue';
+    campos.progresso = 100;
+    if (!p.data_entrega) campos.data_entrega = hoje;
+  } else if (etapa !== 'Entregue' && p.etapa === 'Entregue') {
+    campos.data_entrega = null;
+    if (p.status === 'Entregue') campos.status = 'Em construção';
+  }
+  return campos;
 }
 
 // Aplica a mudança na tela na hora e só depois grava. Se o banco recusar,

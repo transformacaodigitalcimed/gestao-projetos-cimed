@@ -25,6 +25,10 @@
   --vermelho-luz: #FBE9E9;
   --neutro:       #6B6B6B;
   --neutro-luz:   #EFEEEA;
+  /* entregue: verde mais fechado que o "no prazo", para não confundir
+     projeto saudável com projeto que já saiu */
+  --entregue:     #0A6B4F;
+  --entregue-luz: #DFF0E8;
 
   --raio:   10px;
   --raio-g: 14px;
@@ -221,6 +225,13 @@ table{border-collapse:collapse;width:100%}
 .kcard.a::before{background:var(--ambar)}
 .kcard.r::before{background:var(--vermelho)}
 .kcard.n::before{background:var(--neutro)}
+.kcard.c::before{background:var(--entregue)}
+
+/* a coluna Entregue é a zona do que já saiu: fundo verde claro */
+.kcol[data-etapa="Entregue"]{background:var(--entregue-luz)}
+.kcol[data-etapa="Entregue"] .kcol-cab h4{color:var(--entregue)}
+.kcol[data-etapa="Entregue"] .kcol-cab h4::before{content:"✓ ";font-weight:900}
+.kcol[data-etapa="Entregue"] .progresso span{background:var(--entregue)}
 
 .kcard-topo{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
 .card-cod{font-size:10.5px;font-weight:800;letter-spacing:.08em;color:var(--cinza-claro)}
@@ -258,6 +269,8 @@ table{border-collapse:collapse;width:100%}
 .pill.a{background:var(--ambar-luz);color:var(--ambar)}
 .pill.r{background:var(--vermelho-luz);color:var(--vermelho)}
 .pill.n{background:var(--neutro-luz);color:var(--neutro)}
+.pill.c{background:var(--entregue-luz);color:var(--entregue)}
+.pill.c::before{content:"✓";font-weight:900}
 
 .progresso{height:6px;background:var(--neutro-luz);border-radius:4px;overflow:hidden}
 .progresso span{display:block;height:100%;background:var(--preto);border-radius:4px;transition:width .3s}
@@ -330,6 +343,7 @@ table{border-collapse:collapse;width:100%}
 .gantt-barra.a{background:var(--ambar)}
 .gantt-barra.r{background:var(--vermelho)}
 .gantt-barra.n{background:var(--neutro)}
+.gantt-barra.c{background:var(--entregue)}
 .gantt-hoje{position:absolute;top:0;bottom:0;width:2px;background:var(--amarelo);z-index:3}
 /* o rótulo aparece só na primeira linha; a faixa amarela segue por todas */
 .gantt-hoje.com-rotulo::after{
