@@ -10,9 +10,18 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY, PESSOAS, REGRAS, LIMITE_ANEXO_MB } fro
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ------------------------------------------------------------- CONSTANTES
-// A ordem manda no Quadro: o que exige ação primeiro, o que já saiu no fim.
-const ETAPAS = ['Prioritário', 'Protótipo e ajustes', 'Fila', 'Entregue'];
-const STATUS = ['Não iniciado', 'Em mapeamento', 'Em construção', 'Em ajustes', 'Entregue', 'Pausado'];
+// A ordem manda no Quadro: o que exige ação primeiro, o que saiu do fluxo no fim.
+const ETAPAS = ['Prioritário', 'Protótipo e ajustes', 'Fila', 'Entregue', 'Congelado / Cancelado'];
+const STATUS = ['Não iniciado', 'Em mapeamento', 'Em construção', 'Em ajustes',
+                'Entregue', 'Congelado', 'Cancelado', 'Descontinuado'];
+
+// Status que tiram o projeto do fluxo: não cobram prazo e vivem na
+// última coluna do Quadro.
+const CONGELADOS = ['Congelado'];
+const ENCERRADOS = ['Cancelado', 'Descontinuado'];
+const FORA_DO_FLUXO = [...CONGELADOS, ...ENCERRADOS];
+const ETAPA_PARADA = 'Congelado / Cancelado';
+const ETAPA_ENTREGUE = 'Entregue';
 
 const RAG = {
   r: { nome: 'Atrasado',  cls: 'r', cor: 'var(--vermelho)' },
@@ -20,8 +29,10 @@ const RAG = {
   v: { nome: 'No prazo',  cls: 'v', cor: 'var(--verde)' },
   c: { nome: 'Entregue',  cls: 'c', cor: 'var(--entregue)' },
   s: { nome: 'Sem prazo', cls: 'n', cor: 'var(--cinza-claro)' },
+  z: { nome: 'Congelado', cls: 'z', cor: 'var(--congelado)' },
+  x: { nome: 'Cancelado', cls: 'x', cor: 'var(--cancelado)' },
 };
-const ORDEM_RAG = ['r', 'a', 'v', 's', 'c'];
+const ORDEM_RAG = ['r', 'a', 'v', 's', 'c', 'z', 'x'];
 
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
@@ -101,6 +112,51 @@ const fmtNum = (n, casas = 0) =>
     : Number(n).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
 const fmtReal = (n) => (n ? 'R$ ' + fmtNum(n) : '—');
 
+// =====================================================================
+// CONFIRMAÇÃO — nada é apagado sem dizer antes o que se perde junto
+// =====================================================================
+let resolverConfirma = null;
+
+function confirmar({ titulo, texto, perdas = [], rotulo = 'Excluir' }) {
+  $('#confirmar-titulo').textContent = titulo;
+  $('#confirmar-texto').textContent = texto;
+  $('#confirmar-perdas').innerHTML = perdas.map((x) => `<li>${esc(x)}</li>`).join('');
+  $('#confirmar-ok').textContent = rotulo;
+  $('#confirmar').hidden = false;
+  setTimeout(() => $('#confirmar-ok').focus(), 60);
+  return new Promise((res) => { resolverConfirma = res; });
+}
+
+function fecharConfirma(resposta) {
+  $('#confirmar').hidden = true;
+  const r = resolverConfirma;
+  resolverConfirma = null;
+  if (r) r(resposta);
+}
+
+$('#confirmar-ok').addEventListener('click', () => fecharConfirma(true));
+
+// =====================================================================
+// CONFETE — a comemoração de quando um projeto é entregue
+// =====================================================================
+function soltarConfete() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const alvo = $('#confete');
+  const cores = ['#FFD200', '#E8B800', '#0A6B4F', '#111111', '#FFF4C9'];
+  alvo.innerHTML = Array.from({ length: 70 }, () => {
+    const cor = cores[Math.floor(Math.random() * cores.length)];
+    const esq = Math.random() * 100;
+    const atraso = Math.random() * 0.5;
+    const giro = Math.random() * 720 - 360;
+    const dur = 2.2 + Math.random() * 1.4;
+    return `<i style="left:${esq}%;background:${cor};animation-delay:${atraso}s;
+             animation-duration:${dur}s;--giro:${giro}deg"></i>`;
+  }).join('');
+  alvo.hidden = false;
+  clearTimeout(soltarConfete._t);
+  soltarConfete._t = setTimeout(() => { alvo.hidden = true; alvo.innerHTML = ''; }, 4200);
+}
+
 function toast(msg, erro = false) {
   const el = $('#toast');
   el.textContent = msg;
@@ -138,10 +194,19 @@ function textoComMencoes(texto) {
   return html;
 }
 
-// autocomplete: digitar "@" abre a lista de pessoas
-function ligarMencoes(txtSel, listaSel) {
+// autocomplete: digitar "@" abre a lista de pessoas.
+// A lista é criada aqui, então funciona em qualquer campo — basta chamar.
+function ligarMencoes(txtSel) {
   const txt = $(txtSel);
-  const lista = $(listaSel);
+  if (!txt) return;
+
+  const pai = txt.parentElement;
+  pai.classList.add('tem-mencao');
+  const lista = document.createElement('ul');
+  lista.className = 'mencoes';
+  lista.hidden = true;
+  pai.appendChild(lista);
+
   let opcoes = [];
   let ativo = 0;
 
@@ -194,6 +259,11 @@ function ligarMencoes(txtSel, listaSel) {
 // vermelho = compromisso de data quebrado.
 // =====================================================================
 function calcRag(p) {
+  // Projeto fora do fluxo não é cobrado por prazo: não faz sentido dizer
+  // que um projeto cancelado está atrasado.
+  if (ENCERRADOS.includes(p.status)) return { k: 'x', motivo: p.status };
+  if (CONGELADOS.includes(p.status)) return { k: 'z', motivo: 'Congelado' };
+
   if (p.status === 'Entregue' || p.data_entrega) return { k: 'c', motivo: 'Entregue' };
   if (!p.data_prevista) return { k: 's', motivo: 'Sem previsão de entrega definida' };
 
@@ -385,9 +455,21 @@ function irPara(view) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+// A lista suspensa de Responsável e Solicitante: quem já é responsável por
+// algum projeto, mais todo mundo com login. Continua aceitando nome novo.
+function montarListaPessoas() {
+  const nomes = [...new Set([
+    ...MENCIONAVEIS,
+    ...estado.projetos.map((p) => p.responsavel).filter(Boolean),
+    ...estado.projetos.map((p) => p.solicitante).filter(Boolean),
+  ])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  $('#lista-pessoas').innerHTML = nomes.map((n) => `<option value="${esc(n)}"></option>`).join('');
+}
+
 function renderTudo() {
   renderVisao();
   renderFiltros();
+  montarListaPessoas();
   renderTabela();
   renderNotificacoes();
   if (estado.view === 'cronograma') renderGantt();
@@ -481,6 +563,10 @@ function renderQuadro() {
           <h4>${esc(etapa)}</h4>
           <span class="cont">${ps.length}</span>
           ${horas ? `<span class="kcol-horas">${fmtNum(horas, 1)} h/mês</span>` : ''}
+          ${podeEditar()
+            ? `<button class="kcol-novo" data-nova-etapa="${esc(etapa)}"
+                       title="Criar um projeto já nesta etapa">+</button>`
+            : ''}
         </header>
         <div class="kcol-corpo">
           ${ps.map(cardKanban).join('') || '<p class="kvazio">Solte um projeto aqui</p>'}
@@ -499,36 +585,44 @@ function cardKanban(p) {
     c.autor !== estado.nome && mencionaMim(c.texto) && new Date(c.criado_em) > corte);
   const ck = compChave(p.compliance_necessario);
 
+  const parado = FORA_DO_FLUXO.includes(p.status);
+
+  // O card inteiro abre a ficha. Os controles internos param o clique
+  // antes de chegar aqui, então mexer no status não abre nada.
   return `
-    <article class="kcard ${RAG[r.k].cls}" ${dono ? 'draggable="true"' : ''} data-id="${p.id}">
+    <article class="kcard ${RAG[r.k].cls}${estado.destacar === p.id ? ' novinho' : ''}"
+             ${dono ? 'draggable="true"' : ''}
+             data-id="${p.id}" data-abrir="${p.id}" title="Abrir a ficha completa">
       <div class="kcard-topo">
-        <span class="card-cod">${esc(p.codigo || '—')}</span>
         <span class="pill ${RAG[r.k].cls}" title="${esc(r.motivo)}">${RAG[r.k].nome}</span>
+        ${dono && ck === 'sim' ? '<span class="kcomp sim">Compliance</span>' : ''}
       </div>
-      <h5 data-abrir="${p.id}" title="Abrir a ficha completa">${esc(p.nome)}</h5>
+      <h5>${esc(p.nome)}</h5>
       <div class="kcard-meta">
         <span>${esc(p.responsavel || 'sem responsável')}</span>
         ${p.horas_mes ? `<span>${fmtNum(p.horas_mes, 1)} h/mês</span>` : ''}
-        <span>${fmtData(p.data_prevista)}</span>
-        ${nAnexos ? `<span class="kanexo" data-abrir="${p.id}">${nAnexos} anexo${nAnexos > 1 ? 's' : ''}</span>` : ''}
-        ${chamou ? `<span class="kmencao" data-abrir="${p.id}">@você</span>`
+        ${parado ? '' : `<span>${fmtData(p.data_prevista)}</span>`}
+        ${nAnexos ? `<span class="kanexo">${nAnexos} anexo${nAnexos > 1 ? 's' : ''}</span>` : ''}
+        ${chamou ? '<span class="kmencao">@você</span>'
           : coments.length ? `<span class="kcoment">${coments.length} coment.</span>` : ''}
-        ${dono && ck === 'sim' ? '<span class="kcomp sim">Compliance</span>' : ''}
       </div>
       ${dono ? `
         <select class="kcard-status" data-status="${p.id}" draggable="false" title="Mudar o status">
           ${STATUS.map((s) => `<option${s === p.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}
         </select>
+        ${parado ? '' : `
         <div class="kcard-prog">
           <button class="kbtn" data-prog="${p.id}" data-delta="-10" title="Diminuir 10%">−</button>
           <div class="progresso"><span style="width:${p.progresso}%"></span></div>
           <span class="kprog-num">${p.progresso}%</span>
           <button class="kbtn" data-prog="${p.id}" data-delta="10" title="Aumentar 10%">+</button>
-        </div>`
+        </div>`}`
       : `
-        <div class="kcard-estado">${esc(p.status)} · ${p.progresso}%</div>
+        <div class="kcard-estado">${esc(p.status)}${parado ? '' : ' · ' + p.progresso + '%'}</div>
         ${selectCompliance(p, 'kcard-compliance')}`}
-      ${p.proximo_passo ? `<p class="kcard-passo" data-abrir="${p.id}">→ ${esc(p.proximo_passo)}</p>` : ''}
+      ${parado && p.motivo_parada
+        ? `<p class="kcard-motivo">${textoComMencoes(p.motivo_parada)}</p>`
+        : p.proximo_passo ? `<p class="kcard-passo">→ ${textoComMencoes(p.proximo_passo)}</p>` : ''}
     </article>`;
 }
 
@@ -594,39 +688,89 @@ function ligarQuadro() {
   });
 
   // status e compliance mudam direto no card
-  kb.addEventListener('change', (e) => {
+  kb.addEventListener('change', async (e) => {
     const st = e.target.closest('[data-status]');
-    if (st) return mudarCampo(st.dataset.status, { status: st.value });
+    if (st) {
+      const p = estado.projetos.find((x) => x.id === st.dataset.status);
+      if (!p) return;
+      const entregando = st.value === 'Entregue' && p.status !== 'Entregue';
+      await mudarCampo(p.id, camposParaStatus(p, st.value));
+      if (entregando) soltarConfete();
+      return;
+    }
     const cp = e.target.closest('[data-compliance]');
     if (cp) return mudarCampo(cp.dataset.compliance, camposCompliance(cp.value));
   });
 
-  // progresso em passos de 10%
   kb.addEventListener('click', (e) => {
+    // criar projeto já na etapa da coluna
+    const novo = e.target.closest('[data-nova-etapa]');
+    if (novo) {
+      e.stopPropagation();
+      abrirProjeto(null, novo.dataset.novaEtapa);
+      return;
+    }
+
+    // progresso em passos de 10%
     const btn = e.target.closest('[data-prog]');
     if (!btn) return;
     e.stopPropagation();
     const p = estado.projetos.find((x) => x.id === btn.dataset.prog);
     if (!p) return;
-    const novo = Math.min(100, Math.max(0, p.progresso + Number(btn.dataset.delta)));
-    if (novo !== p.progresso) mudarCampo(p.id, { progresso: novo });
+    const valor = Math.min(100, Math.max(0, p.progresso + Number(btn.dataset.delta)));
+    if (valor !== p.progresso) mudarCampo(p.id, { progresso: valor });
   });
 }
 
 // Soltar na coluna "Entregue" é dizer que o projeto saiu — então o card
 // passa a 100%, ganha data de entrega e o semáforo acompanha. Tirar de lá
 // desfaz isso, senão ele ficaria verde para sempre.
+const isoHoje = () =>
+  `${HOJE.getFullYear()}-${String(HOJE.getMonth() + 1).padStart(2, '0')}-${String(HOJE.getDate()).padStart(2, '0')}`;
+
 function camposParaEtapa(p, etapa) {
   const campos = { etapa };
-  const hoje = `${HOJE.getFullYear()}-${String(HOJE.getMonth() + 1).padStart(2, '0')}-${String(HOJE.getDate()).padStart(2, '0')}`;
 
-  if (etapa === 'Entregue' && p.etapa !== 'Entregue') {
+  if (etapa === ETAPA_ENTREGUE && p.etapa !== ETAPA_ENTREGUE) {
     campos.status = 'Entregue';
     campos.progresso = 100;
-    if (!p.data_entrega) campos.data_entrega = hoje;
-  } else if (etapa !== 'Entregue' && p.etapa === 'Entregue') {
+    if (!p.data_entrega) campos.data_entrega = isoHoje();
+
+  } else if (etapa === ETAPA_PARADA && p.etapa !== ETAPA_PARADA) {
+    // entrou na coluna de parados: congelado é o padrão, cancelar é decisão
+    if (!FORA_DO_FLUXO.includes(p.status)) campos.status = 'Congelado';
+    campos.data_entrega = null;
+
+  } else if (etapa !== ETAPA_ENTREGUE && p.etapa === ETAPA_ENTREGUE) {
     campos.data_entrega = null;
     if (p.status === 'Entregue') campos.status = 'Em construção';
+
+  } else if (etapa !== ETAPA_PARADA && p.etapa === ETAPA_PARADA) {
+    // voltou ao fluxo: sai do congelamento e o motivo deixa de valer
+    if (FORA_DO_FLUXO.includes(p.status)) campos.status = 'Em construção';
+    campos.motivo_parada = null;
+  }
+  return campos;
+}
+
+// O status manda na coluna, não o contrário: marcar "Entregue" move o
+// card sozinho, marcar "Cancelado" manda para a coluna de parados.
+function camposParaStatus(p, status) {
+  const campos = { status };
+
+  if (status === 'Entregue') {
+    campos.progresso = 100;
+    campos.etapa = ETAPA_ENTREGUE;
+    if (!p.data_entrega) campos.data_entrega = isoHoje();
+
+  } else if (FORA_DO_FLUXO.includes(status)) {
+    campos.etapa = ETAPA_PARADA;
+    campos.data_entrega = null;
+
+  } else {
+    if (p.status === 'Entregue') campos.data_entrega = null;
+    if (p.etapa === ETAPA_ENTREGUE || p.etapa === ETAPA_PARADA) campos.etapa = 'Prioritário';
+    if (FORA_DO_FLUXO.includes(p.status)) campos.motivo_parada = null;
   }
   return campos;
 }
@@ -719,6 +863,16 @@ function renderGantt() {
   }).join('');
 
   $('#gantt').innerHTML = cabecalho + linhas;
+
+  // Abrir o cronograma já mostrando hoje, e não janeiro do ano passado.
+  const caixa = $('.gantt-wrap');
+  const marca = $('.gantt-hoje');
+  if (caixa && marca) {
+    requestAnimationFrame(() => {
+      const alvo = marca.getBoundingClientRect().left - caixa.getBoundingClientRect().left;
+      caixa.scrollLeft = Math.max(0, caixa.scrollLeft + alvo - caixa.clientWidth / 2);
+    });
+  }
 }
 
 // =====================================================================
@@ -846,25 +1000,56 @@ function renderNotificacoes() {
     </li>`).join('')
     : '<li class="vazio">Nenhum alerta. Todos os projetos com prazo definido estão no verde.</li>';
 
-  // menções dirigidas a quem está logado
+  // Menções dirigidas a quem está logado — dos comentários E dos campos
+  // do projeto, porque o @ agora vale em todo campo de texto.
   const corteM = estado.lidoAte ? new Date(estado.lidoAte) : new Date(0);
+
   const minhas = estado.comentarios
     .filter((c) => c.autor !== estado.nome && mencionaMim(c.texto))
-    .slice(0, 12);
+    .map((c) => {
+      const p = estado.projetos.find((x) => x.id === c.projeto_id);
+      return {
+        autor: c.autor, quando: c.criado_em, texto: c.texto,
+        onde: p ? `em <b data-abrir="${p.id}">${esc(p.nome)}</b>` : 'no mural',
+      };
+    });
 
-  $('#painel-mencoes').hidden = !minhas.length;
-  $('#lista-mencoes').innerHTML = minhas.map((c) => {
-    const p = estado.projetos.find((x) => x.id === c.projeto_id);
-    const nova = new Date(c.criado_em) > corteM;
+  const CAMPOS_MENCAO = [
+    ['proximo_passo', 'próximo passo'],
+    ['descricao', 'descrição'],
+    ['observacoes', 'observações'],
+    ['motivo_parada', 'motivo da parada'],
+    ['compliance_obs', 'observação do Compliance'],
+  ];
+
+  estado.projetos.forEach((p) => {
+    CAMPOS_MENCAO.forEach(([campo, rotulo]) => {
+      if (p[campo] && mencionaMim(p[campo]) && p.atualizado_por !== estado.nome) {
+        minhas.push({
+          autor: p.atualizado_por || 'alguém',
+          quando: p.atualizado_em,
+          texto: p[campo],
+          onde: `no <b data-abrir="${p.id}">${esc(p.nome)}</b> · ${rotulo}`,
+        });
+      }
+    });
+  });
+
+  minhas.sort((a, b) => new Date(b.quando) - new Date(a.quando));
+  const lista = minhas.slice(0, 15);
+
+  $('#painel-mencoes').hidden = !lista.length;
+  $('#lista-mencoes').innerHTML = lista.map((m) => {
+    const nova = new Date(m.quando) > corteM;
     return `
       <li class="${nova ? 'nova' : ''}">
         <div class="cab">
-          <span class="autor">${esc(c.autor)}</span>
-          <span class="onde">${p ? `em <b data-abrir="${p.id}">${esc(p.nome)}</b>` : 'no mural'}</span>
-          <span class="quando">${fmtQuando(c.criado_em)}</span>
+          <span class="autor">${esc(m.autor)}</span>
+          <span class="onde">${m.onde}</span>
+          <span class="quando">${fmtQuando(m.quando)}</span>
           ${nova ? '<span class="tag-nova">nova</span>' : ''}
         </div>
-        <div class="texto">${textoComMencoes(c.texto)}</div>
+        <div class="texto">${textoComMencoes(m.texto)}</div>
       </li>`;
   }).join('');
 
@@ -914,8 +1099,9 @@ function itemRecado(c) {
     </li>`;
 }
 
-ligarMencoes('#recado-texto', '#mencoes-recado');
-ligarMencoes('#comentario-texto', '#mencoes-comentario');
+// O @ vale em todo campo de texto livre, não só nos comentários.
+['#recado-texto', '#comentario-texto', '#f-descricao', '#f-proximo_passo',
+ '#f-observacoes', '#f-motivo-parada', '#f-compliance-obs'].forEach(ligarMencoes);
 
 $('#form-recado').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -946,7 +1132,7 @@ function montarSelects() {
   $('#f-status').innerHTML = STATUS.map((v) => `<option>${esc(v)}</option>`).join('');
 }
 
-function abrirProjeto(id) {
+function abrirProjeto(id, etapaPadrao) {
   const p = id ? estado.projetos.find((x) => x.id === id) : null;
   estado.editando = p ? p.id : null;
 
@@ -956,13 +1142,16 @@ function abrirProjeto(id) {
   $('#btn-excluir').hidden = !p;
 
   const f = $('#form-projeto');
-  const vals = p || { etapa: 'Fila', status: 'Não iniciado', progresso: 0, prioridade: 3 };
-  ['nome', 'descricao', 'codigo', 'responsavel', 'etapa', 'status', 'data_inicio',
-   'data_prevista', 'data_entrega', 'prioridade', 'horas_mes', 'custo_ano',
-   'progresso', 'proximo_passo', 'observacoes'].forEach((campo) => {
+  const vals = p || {
+    etapa: etapaPadrao || 'Fila', status: 'Não iniciado', progresso: 0, prioridade: 3,
+  };
+  ['nome', 'descricao', 'codigo', 'responsavel', 'solicitante', 'etapa', 'status',
+   'data_inicio', 'data_prevista', 'data_entrega', 'prioridade', 'horas_mes',
+   'custo_ano', 'progresso', 'proximo_passo', 'motivo_parada', 'observacoes'].forEach((campo) => {
     f.elements[campo].value = vals[campo] ?? '';
   });
   $('#out-progresso').textContent = (vals.progresso || 0) + '%';
+  $('#campo-motivo').hidden = !FORA_DO_FLUXO.includes(vals.status);
 
   // comentários do projeto
   const doProjeto = estado.comentarios.filter((c) => c.projeto_id === id);
@@ -1035,6 +1224,22 @@ $('#f-progresso').addEventListener('input', (e) => {
   $('#out-progresso').textContent = e.target.value + '%';
 });
 
+// O status manda: Entregue já joga o progresso para 100 e o campo de
+// motivo só aparece quando o projeto sai do fluxo.
+$('#f-status').addEventListener('change', (e) => {
+  const status = e.target.value;
+  $('#campo-motivo').hidden = !FORA_DO_FLUXO.includes(status);
+
+  if (status === 'Entregue') {
+    $('#f-progresso').value = 100;
+    $('#out-progresso').textContent = '100%';
+    $('#f-etapa').value = ETAPA_ENTREGUE;
+  } else if (FORA_DO_FLUXO.includes(status)) {
+    $('#f-etapa').value = ETAPA_PARADA;
+    setTimeout(() => $('#f-motivo-parada').focus(), 60);
+  }
+});
+
 $('#form-projeto').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = e.target;
@@ -1046,6 +1251,8 @@ $('#form-projeto').addEventListener('submit', async (e) => {
     descricao: txt(f.elements.descricao.value),
     codigo: txt(f.elements.codigo.value),
     responsavel: txt(f.elements.responsavel.value),
+    solicitante: txt(f.elements.solicitante.value),
+    motivo_parada: txt(f.elements.motivo_parada.value),
     etapa: f.elements.etapa.value,
     status: f.elements.status.value,
     data_inicio: f.elements.data_inicio.value || null,
@@ -1059,11 +1266,35 @@ $('#form-projeto').addEventListener('submit', async (e) => {
     observacoes: txt(f.elements.observacoes.value),
   };
 
+  // Regras que o status impõe, iguais às do Quadro
+  const anterior = estado.projetos.find((x) => x.id === estado.editando);
+  const entregando = campos.status === 'Entregue' && anterior?.status !== 'Entregue';
+
+  if (campos.status === 'Entregue') {
+    campos.progresso = 100;
+    campos.etapa = ETAPA_ENTREGUE;
+    if (!campos.data_entrega) campos.data_entrega = isoHoje();
+  } else if (FORA_DO_FLUXO.includes(campos.status)) {
+    campos.etapa = ETAPA_PARADA;
+    campos.data_entrega = null;
+  }
+
+  const ehNovo = !estado.editando;
+
   try {
-    await salvarProjeto(estado.editando, campos);
+    const salvo = await salvarProjeto(estado.editando, campos);
     fecharModal();
+
+    // Projeto novo nasce na Fila, que é a 3ª coluna. Em vez de deixar
+    // você procurar, o sistema diz onde ele foi parar e pisca o card.
+    if (ehNovo && salvo?.id) {
+      estado.destacar = salvo.id;
+      setTimeout(() => { estado.destacar = null; renderQuadro(); }, 4000);
+    }
+
     await carregarTudo();
-    toast('Projeto salvo');
+    toast(ehNovo ? `Projeto criado na coluna "${campos.etapa}"` : 'Projeto salvo');
+    if (entregando) soltarConfete();
   } catch (err) {
     $('#modal-erro').textContent = 'Não foi possível salvar: ' + err.message;
     $('#modal-erro').hidden = false;
@@ -1073,7 +1304,23 @@ $('#form-projeto').addEventListener('submit', async (e) => {
 $('#btn-excluir').addEventListener('click', async () => {
   const p = estado.projetos.find((x) => x.id === estado.editando);
   if (!p) return;
-  if (!confirm(`Excluir "${p.nome}"? Essa ação não pode ser desfeita.`)) return;
+
+  // diz o que vai junto antes de perguntar
+  const nAnexos = estado.anexos.filter((a) => a.projeto_id === p.id).length;
+  const nComent = estado.comentarios.filter((c) => c.projeto_id === p.id).length;
+  const nHist = estado.historico.filter((h) => h.projeto_id === p.id).length;
+  const perdas = [];
+  if (nAnexos) perdas.push(`${nAnexos} arquivo${nAnexos > 1 ? 's' : ''} anexado${nAnexos > 1 ? 's' : ''}`);
+  if (nComent) perdas.push(`${nComent} comentário${nComent > 1 ? 's' : ''}`);
+  if (nHist) perdas.push(`${nHist} registro${nHist > 1 ? 's' : ''} de histórico`);
+
+  const ok = await confirmar({
+    titulo: 'Excluir projeto',
+    texto: `Excluir "${p.nome}" apaga o projeto e tudo que está ligado a ele.`,
+    perdas,
+    rotulo: 'Excluir projeto',
+  });
+  if (!ok) return;
   const { error } = await sb.from('projetos').delete().eq('id', p.id);
   if (error) return toast('Erro ao excluir: ' + error.message, true);
   fecharModal();
@@ -1182,7 +1429,14 @@ $('#lista-anexos').addEventListener('click', async (e) => {
   const apagar = e.target.closest('[data-apagar-anexo]');
   if (apagar) {
     const a = estado.anexos.find((x) => x.id === apagar.dataset.apagarAnexo);
-    if (!a || !confirm(`Remover "${a.nome}"? Não dá para desfazer.`)) return;
+    if (!a) return;
+    const ok = await confirmar({
+      titulo: 'Remover anexo',
+      texto: `O arquivo "${a.nome}" será apagado do armazenamento.`,
+      perdas: [`${fmtTamanho(a.tamanho)} · enviado por ${a.autor || '—'}`],
+      rotulo: 'Remover arquivo',
+    });
+    if (!ok) return;
     const rm = await sb.storage.from(BUCKET).remove([a.caminho]);
     if (rm.error) return toast('Erro ao remover o arquivo: ' + rm.error.message, true);
     const del = await sb.from('anexos').delete().eq('id', a.id);
@@ -1265,6 +1519,11 @@ $('#tabela').addEventListener('change', (e) => {
 });
 
 document.addEventListener('click', (e) => {
+  // a confirmação vem antes de tudo: enquanto ela estiver aberta,
+  // nenhum outro clique da tela deve valer
+  if (e.target.closest('[data-cancelar-confirma]')) return fecharConfirma(false);
+  if (!$('#confirmar').hidden) return;
+
   // clique em campo de formulário nunca abre a ficha: senão mexer no
   // seletor de Compliance dentro de uma linha da tabela abriria o modal
   if (e.target.closest('select, input, textarea')) return;
@@ -1279,5 +1538,7 @@ document.addEventListener('click', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !$('#modal').hidden) fecharModal();
+  if (e.key !== 'Escape') return;
+  if (!$('#confirmar').hidden) return fecharConfirma(false);
+  if (!$('#modal').hidden) fecharModal();
 });

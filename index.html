@@ -5,14 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gestão de Projetos · CIMED</title>
 <meta name="description" content="Painel de acompanhamento dos projetos de transformação digital do RH CIMED.">
-<link rel="icon" type="image/svg+xml" href="favicon.svg?v=9">
-<link rel="apple-touch-icon" href="favicon.svg?v=9">
+<link rel="icon" type="image/svg+xml" href="favicon.svg?v=10">
+<link rel="apple-touch-icon" href="favicon.svg?v=10">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- O ?v= força o navegador a buscar a versão nova em vez da guardada em cache.
      SEMPRE que alterar style.css ou app.js, some 1 nos dois números abaixo. -->
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 
@@ -203,8 +203,7 @@
           <form id="form-recado" class="form-recado">
             <div class="campo-mencao">
               <textarea id="recado-texto" rows="2" placeholder="Escreva um recado… digite @ para marcar alguém"></textarea>
-              <ul class="mencoes" id="mencoes-recado" hidden></ul>
-            </div>
+                </div>
             <button type="submit" class="btn-primario pequeno">Publicar</button>
           </form>
           <ul class="lista-recados" id="lista-recados"></ul>
@@ -254,12 +253,20 @@
       </div>
 
       <div class="campo">
-        <label for="f-codigo">Código</label>
-        <input id="f-codigo" name="codigo">
+        <label for="f-responsavel">Responsável</label>
+        <input id="f-responsavel" name="responsavel" list="lista-pessoas"
+               autocomplete="off" placeholder="Escolha da lista ou digite">
+        <datalist id="lista-pessoas"></datalist>
       </div>
       <div class="campo">
-        <label for="f-responsavel">Responsável</label>
-        <input id="f-responsavel" name="responsavel">
+        <label for="f-solicitante">Solicitante <span class="dica">quem pediu</span></label>
+        <input id="f-solicitante" name="solicitante" list="lista-pessoas"
+               autocomplete="off" placeholder="Área, liderança ou pessoa">
+      </div>
+
+      <div class="campo">
+        <label for="f-codigo">Código</label>
+        <input id="f-codigo" name="codigo">
       </div>
 
       <div class="campo">
@@ -269,6 +276,17 @@
       <div class="campo">
         <label for="f-status">Status</label>
         <select id="f-status" name="status"></select>
+      </div>
+
+      <div class="campo largo" id="campo-motivo" hidden>
+        <label for="f-motivo-parada">
+          Motivo da parada
+          <button type="button" class="btn-ditar" data-ditar="f-motivo-parada" hidden>
+            <span class="ponto"></span><span class="rot">Ditar</span>
+          </button>
+        </label>
+        <textarea id="f-motivo-parada" name="motivo_parada" rows="2"
+          placeholder="Por que o projeto foi congelado, cancelado ou descontinuado"></textarea>
       </div>
 
       <div class="campo">
@@ -371,7 +389,6 @@
       <form id="form-comentario" class="form-recado">
         <div class="campo-mencao">
           <textarea id="comentario-texto" rows="2" placeholder="Adicionar um comentário… digite @ para marcar alguém"></textarea>
-          <ul class="mencoes" id="mencoes-comentario" hidden></ul>
         </div>
         <button type="submit" class="btn-primario pequeno">Enviar</button>
       </form>
@@ -380,8 +397,27 @@
   </div>
 </div>
 
+<!-- ================================================ CONFIRMAR EXCLUSÃO -->
+<div class="modal confirmar" id="confirmar" hidden>
+  <div class="modal-fundo" data-cancelar-confirma></div>
+  <div class="modal-caixa estreita" role="alertdialog" aria-modal="true" aria-labelledby="confirmar-titulo">
+    <div class="confirmar-corpo">
+      <h3 id="confirmar-titulo">Confirmar exclusão</h3>
+      <p id="confirmar-texto"></p>
+      <ul class="confirmar-perdas" id="confirmar-perdas"></ul>
+      <p class="confirmar-aviso">Esta ação não pode ser desfeita.</p>
+      <div class="confirmar-acoes">
+        <button type="button" class="btn-texto" data-cancelar-confirma>Cancelar</button>
+        <button type="button" class="btn-perigo forte" id="confirmar-ok">Excluir</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="confete" id="confete" hidden aria-hidden="true"></div>
+
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="app.js?v=9"></script>
+<script type="module" src="app.js?v=10"></script>
 </body>
 </html>
