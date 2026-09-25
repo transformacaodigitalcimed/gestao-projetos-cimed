@@ -5,14 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gestão de Projetos · CIMED</title>
 <meta name="description" content="Painel de acompanhamento dos projetos de transformação digital do RH CIMED.">
-<link rel="icon" type="image/svg+xml" href="favicon.svg?v=10">
-<link rel="apple-touch-icon" href="favicon.svg?v=10">
+<link rel="icon" type="image/svg+xml" href="favicon.svg?v=12">
+
+<!-- instalável no celular: abre em tela cheia, sem barra do navegador -->
+<link rel="manifest" href="manifest.json?v=12">
+<meta name="theme-color" content="#FFD200">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Projetos CIMED">
+<link rel="apple-touch-icon" href="icone-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- O ?v= força o navegador a buscar a versão nova em vez da guardada em cache.
      SEMPRE que alterar style.css ou app.js, some 1 nos dois números abaixo. -->
-<link rel="stylesheet" href="style.css?v=10">
+<link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 
@@ -76,9 +84,12 @@
 
       <nav class="nav" id="nav">
         <button class="nav-item ativo" data-view="visao">Visão geral</button>
+        <button class="nav-item" data-view="minhas">
+          Minhas tarefas
+          <span class="badge cinza" id="badge-minhas" hidden>0</span>
+        </button>
         <button class="nav-item" data-view="quadro">Quadro</button>
         <button class="nav-item" data-view="cronograma">Cronograma</button>
-        <button class="nav-item" data-view="projetos">Projetos</button>
         <button class="nav-item" data-view="notificacoes">
           Notificações
           <span class="badge" id="badge-notif" hidden>0</span>
@@ -102,7 +113,33 @@
         <p class="view-sub" id="visao-sub"></p>
       </div>
 
+      <!-- o número que a diretoria pergunta: quanto já virou resultado -->
+      <div class="painel valor">
+        <div class="valor-cab">
+          <div>
+            <h3>Valor do programa</h3>
+            <p class="dica-bloco">Quanto do ganho anual já está entregue, quanto está a caminho e quanto ainda não começou.</p>
+          </div>
+          <div class="valor-total" id="valor-total"></div>
+        </div>
+        <div class="valor-barra" id="valor-barra"></div>
+        <div class="valor-blocos" id="valor-blocos"></div>
+      </div>
+
       <div class="kpis" id="kpis"></div>
+
+      <div class="painel-duplo">
+        <div class="painel">
+          <h3>Ritmo de entrega</h3>
+          <p class="dica-bloco">Entregas por mês: os seis meses fechados e os três que vêm.</p>
+          <div class="ritmo" id="ritmo"></div>
+        </div>
+        <div class="painel">
+          <h3>Carga por responsável</h3>
+          <p class="dica-bloco">Projetos ativos e horas/mês de cada pessoa.</p>
+          <ul class="carga" id="carga"></ul>
+        </div>
+      </div>
 
       <div class="painel-duplo">
         <div class="painel">
@@ -118,6 +155,24 @@
 
     </section>
 
+    <!-- --------------------------------------------- MINHAS TAREFAS -->
+    <section class="view" id="view-minhas">
+      <div class="view-head">
+        <div>
+          <h2>Minhas tarefas</h2>
+          <p class="view-sub" id="minhas-sub"></p>
+        </div>
+        <div class="acoes-quadro">
+          <label class="alternar">
+            <input type="checkbox" id="ver-todas-tarefas">
+            <span>Ver de todo mundo</span>
+          </label>
+          <button class="btn-texto" id="btn-ics">Baixar para o calendário</button>
+        </div>
+      </div>
+      <div id="minhas-listas"></div>
+    </section>
+
     <!-- ----------------------------------------- QUADRO (KANBAN) -->
     <section class="view" id="view-quadro">
       <div class="view-head">
@@ -125,9 +180,30 @@
           <h2>Quadro</h2>
           <p class="view-sub">Arraste um projeto para mudar de etapa. Status e progresso você muda direto no card.</p>
         </div>
-        <div class="filtros-rapidos" id="filtros-rag"></div>
+        <div class="acoes-quadro">
+          <button class="btn-texto" id="btn-excel">Exportar Excel</button>
+          <button class="btn-primario pequeno" id="btn-novo">+ Novo projeto</button>
+        </div>
       </div>
+
+      <div class="barra-filtros">
+        <input type="search" id="busca"
+          placeholder="Buscar por nome, responsável, solicitante ou próximo passo…">
+        <select id="filtro-status"><option value="">Todos os status</option></select>
+        <select id="filtro-resp"><option value="">Todos os responsáveis</option></select>
+        <select id="ordem-cards">
+          <option value="prioridade">Ordenar por prioridade</option>
+          <option value="data_prevista">Ordenar por prazo</option>
+          <option value="horas_mes">Ordenar por horas/mês</option>
+          <option value="progresso">Ordenar por progresso</option>
+          <option value="nome">Ordenar por nome</option>
+        </select>
+        <button class="btn-texto" id="limpar-filtros">Limpar</button>
+      </div>
+
+      <div class="filtros-rapidos" id="filtros-rag"></div>
       <div class="kanban" id="kanban"></div>
+      <p class="contagem" id="contagem"></p>
     </section>
 
     <!-- ------------------------------------------------- CRONOGRAMA -->
@@ -140,43 +216,13 @@
         <div class="gantt" id="gantt"></div>
       </div>
       <ul class="legenda-rag solta" id="legenda-gantt"></ul>
-    </section>
+      <p class="fora-cronograma" id="fora-cronograma" hidden></p>
 
-    <!-- --------------------------------------------------- PROJETOS -->
-    <section class="view" id="view-projetos">
-      <div class="view-head">
-        <h2>Projetos</h2>
-        <button class="btn-primario pequeno" id="btn-novo">+ Novo projeto</button>
+      <div class="painel largo leitura-painel" id="painel-leitura">
+        <h3>Leitura do cronograma</h3>
+        <p class="dica-bloco">Recalculada toda vez que você abre, a partir das datas e dos responsáveis de agora.</p>
+        <ul class="leitura" id="leitura-cronograma"></ul>
       </div>
-
-      <div class="barra-filtros">
-        <input type="search" id="busca" placeholder="Buscar por nome, responsável ou próximo passo…">
-        <select id="filtro-etapa"><option value="">Todas as etapas</option></select>
-        <select id="filtro-status"><option value="">Todos os status</option></select>
-        <select id="filtro-resp"><option value="">Todos os responsáveis</option></select>
-        <button class="btn-texto" id="limpar-filtros">Limpar</button>
-      </div>
-
-      <div class="tabela-wrap">
-        <table class="tabela" id="tabela">
-          <thead>
-            <tr>
-              <th data-ord="codigo">Cód.</th>
-              <th data-ord="nome">Projeto</th>
-              <th data-ord="etapa">Etapa</th>
-              <th data-ord="status">Status</th>
-              <th data-ord="responsavel">Responsável</th>
-              <th data-ord="horas_mes" class="num">h/mês</th>
-              <th data-ord="data_prevista">Previsão</th>
-              <th data-ord="progresso" class="num">Progresso</th>
-              <th data-ord="rag">Semáforo</th>
-              <th data-ord="compliance">Compliance</th>
-            </tr>
-          </thead>
-          <tbody id="tabela-corpo"></tbody>
-        </table>
-      </div>
-      <p class="contagem" id="contagem"></p>
     </section>
 
     <!-- ---------------------------------------------- NOTIFICAÇÕES -->
@@ -278,6 +324,11 @@
         <select id="f-status" name="status"></select>
       </div>
 
+      <div class="campo largo" id="campo-modelo" hidden>
+        <label for="f-modelo">Começar a partir de um modelo <span class="dica">opcional</span></label>
+        <select id="f-modelo"></select>
+      </div>
+
       <div class="campo largo" id="campo-motivo" hidden>
         <label for="f-motivo-parada">
           Motivo da parada
@@ -355,6 +406,24 @@
       <p id="modal-erro" class="erro" hidden></p>
     </form>
 
+    <!-- ---------------------------------------------- SUBTAREFAS -->
+    <div class="modal-tarefas" id="modal-tarefas">
+      <h4>Tarefas <span class="dica-bloco" id="tarefas-resumo"></span></h4>
+      <ul class="lista-tarefas" id="lista-tarefas"></ul>
+
+      <form class="form-tarefa" id="form-tarefa">
+        <input id="tarefa-titulo" placeholder="Nova tarefa… use @ para marcar alguém" autocomplete="off">
+        <input id="tarefa-resp" list="lista-pessoas" placeholder="Responsável" autocomplete="off">
+        <input id="tarefa-prazo" type="date" title="Prazo da tarefa">
+        <button type="submit" class="btn-primario pequeno">Adicionar</button>
+      </form>
+
+      <div class="linha-modelo" id="linha-modelo">
+        <select id="sel-modelo"></select>
+        <button type="button" class="btn-texto" id="btn-aplicar-modelo">Aplicar modelo</button>
+      </div>
+    </div>
+
     <!-- --------------------------------------------- COMPLIANCE -->
     <div class="bloco-compliance" id="bloco-compliance">
       <h4>Compliance</h4>
@@ -418,6 +487,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="app.js?v=10"></script>
+<script type="module" src="app.js?v=12"></script>
 </body>
 </html>

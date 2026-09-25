@@ -183,6 +183,61 @@ table{border-collapse:collapse;width:100%}
 .kpi-num{font-size:27px;font-weight:800;letter-spacing:-.02em;margin-top:5px;line-height:1.1}
 .kpi-pe{font-size:11.5px;color:var(--cinza-claro);margin-top:3px}
 
+/* =================================================== VALOR DO PROGRAMA */
+.painel.valor{margin-bottom:16px;border-left:4px solid var(--amarelo)}
+.valor-cab{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap;margin-bottom:16px}
+.valor-cab h3{margin-bottom:3px}
+.valor-total{text-align:right}
+.valor-num{display:block;font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1.05}
+.valor-rot{display:block;font-size:11.5px;color:var(--cinza);margin-top:3px}
+
+.valor-barra{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--neutro-luz);margin-bottom:18px}
+.valor-barra span{display:block;transition:width .35s}
+
+.valor-blocos{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px}
+.valor-bloco{display:flex;gap:10px;align-items:flex-start}
+.vb-marca{width:4px;align-self:stretch;border-radius:2px;flex:0 0 auto;min-height:44px}
+.vb-rot{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--cinza)}
+.vb-rot b{color:var(--preto);background:var(--neutro-luz);padding:1px 6px;border-radius:20px;font-size:10.5px;margin-left:4px}
+.vb-num{font-size:18px;font-weight:800;letter-spacing:-.01em;margin-top:3px}
+.vb-num small{font-size:11px;font-weight:600;color:var(--cinza-claro);margin-left:2px}
+.vb-pe{font-size:11.5px;color:var(--cinza);margin-top:2px;line-height:1.35}
+
+/* ------------------------------------------------- RITMO DE ENTREGA */
+.ritmo{display:flex;align-items:flex-end;gap:6px;height:130px;margin-top:6px}
+.ritmo-col{flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%}
+.ritmo-barras{flex:1 1 auto;width:100%;display:flex;flex-direction:column;justify-content:flex-end;gap:2px}
+.rb{display:block;width:100%;border-radius:3px;min-height:3px}
+.rb.feito{background:var(--entregue)}
+.rb.prev{background:var(--linha)}
+.ritmo-num{font-size:11px;font-weight:800;color:var(--grafite);min-height:14px}
+.ritmo-mes{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--cinza-claro)}
+.ritmo-col.agora .ritmo-mes{color:var(--preto)}
+.ritmo-col.agora .ritmo-barras{box-shadow:0 2px 0 0 var(--amarelo)}
+
+/* ---------------------------------------------- CARGA POR RESPONSÁVEL */
+.carga li{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:12.5px}
+.carga-nome{flex:0 0 33%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.carga-barra{flex:1 1 auto;height:7px;background:var(--neutro-luz);border-radius:4px;overflow:hidden}
+.carga-barra i{display:block;height:100%;background:var(--preto);border-radius:4px}
+.carga-num{font-weight:800;min-width:16px;text-align:right}
+.carga-h{font-size:11px;color:var(--cinza-claro);min-width:46px;text-align:right}
+.carga-risco{font-size:10.5px;font-weight:800;color:var(--ambar);min-width:26px;text-align:right}
+
+/* -------------------------------------------- LEITURA DO CRONOGRAMA */
+.leitura-painel{margin-top:16px;border-left:4px solid var(--grafite)}
+.leitura li{display:flex;gap:11px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--linha)}
+.leitura li:last-child{border-bottom:0}
+.leitura .marca-leitura{width:7px;height:7px;border-radius:50%;margin-top:6px;flex:0 0 auto;background:var(--cinza-claro)}
+.leitura li.critico .marca-leitura{background:var(--vermelho)}
+.leitura li.alerta .marca-leitura{background:var(--ambar)}
+.leitura li.folga .marca-leitura{background:var(--verde)}
+.leitura .txt{flex:1 1 auto;font-size:13px;line-height:1.45}
+.leitura .txt em{font-style:normal;display:block;color:var(--cinza);font-size:11.5px;margin-top:2px}
+.fora-cronograma{font-size:12px;color:var(--cinza);margin-top:10px}
+
+.acoes-quadro{display:flex;gap:8px;align-items:center}
+
 /* ============================================================ PAINÉIS */
 .painel-duplo{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .painel-duplo.notif{grid-template-columns:1fr 1fr;margin-bottom:16px}
@@ -644,6 +699,100 @@ body.somente-compliance .campo textarea:disabled{background:var(--fundo);color:v
 
 /* o campo precisa ser âncora da lista de menções criada pelo JS */
 .campo{position:relative}
+
+/* ========================================================= SUBTAREFAS */
+.modal-tarefas{padding:18px 26px 22px;border-top:1px solid var(--linha)}
+.modal-tarefas h4{font-size:13px;font-weight:700;margin-bottom:12px;
+  display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+
+.lista-tarefas li{
+  display:flex;gap:10px;align-items:flex-start;padding:9px 0;
+  border-bottom:1px solid var(--linha);
+}
+.lista-tarefas li:last-child{border-bottom:0}
+.lista-tarefas li.feita .tarefa-titulo{text-decoration:line-through;color:var(--cinza-claro)}
+.lista-tarefas li.travada{opacity:.62}
+
+.tarefa-check{width:17px;height:17px;flex:0 0 auto;margin-top:2px;accent-color:var(--verde);cursor:pointer}
+.tarefa-check:disabled{cursor:not-allowed}
+.tarefa-corpo{flex:1 1 auto;min-width:0}
+.tarefa-titulo{display:block;font-size:13px;line-height:1.4}
+.tarefa-meta{display:flex;flex-wrap:wrap;gap:3px 12px;font-size:11px;color:var(--cinza);margin-top:3px}
+.tarefa-meta b{color:var(--grafite);font-weight:600;cursor:pointer}
+.tarefa-meta b:hover{text-decoration:underline}
+.tarefa-meta i{font-style:normal;color:var(--cinza-claro)}
+.tarefa-meta .venceu{color:var(--vermelho);font-weight:700}
+.tarefa-dep{color:var(--congelado);font-weight:600}
+
+.tarefa-dep-sel{
+  flex:0 0 auto;max-width:150px;padding:3px 6px;font-size:10.5px;
+  border:1px solid var(--linha);border-radius:6px;background:var(--branco);cursor:pointer;
+}
+.tarefa-apagar{
+  width:22px;height:22px;flex:0 0 auto;border-radius:6px;color:var(--cinza);
+  font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;
+}
+.tarefa-apagar:hover{background:var(--vermelho-luz);color:var(--vermelho)}
+
+.form-tarefa{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.form-tarefa input{
+  padding:8px 11px;border:1px solid var(--linha);border-radius:var(--raio);
+  background:var(--branco);font-size:13px;
+}
+.form-tarefa #tarefa-titulo{flex:1 1 220px;min-width:160px}
+.form-tarefa #tarefa-resp{flex:0 1 150px}
+.form-tarefa input:focus{outline:2px solid var(--amarelo);outline-offset:-1px}
+
+.linha-modelo{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
+.linha-modelo select{
+  flex:1 1 240px;padding:7px 10px;font-size:12.5px;cursor:pointer;
+  border:1px solid var(--linha);border-radius:var(--raio);background:var(--fundo);
+}
+
+/* ====================================================== MINHAS TAREFAS */
+.bloco-minhas{margin-bottom:14px;border-left:4px solid var(--linha)}
+.bloco-minhas.atrasada{border-left-color:var(--vermelho)}
+.bloco-minhas.hoje{border-left-color:var(--amarelo)}
+.bloco-minhas.semana{border-left-color:var(--verde)}
+.bloco-minhas.depois,.bloco-minhas.sem{border-left-color:var(--cinza-claro)}
+.bloco-minhas h3{display:flex;align-items:center;gap:8px}
+.bloco-minhas .cont{font-size:11px;font-weight:800;color:var(--cinza);
+  background:var(--neutro-luz);padding:1px 8px;border-radius:20px}
+
+.lista-simples li{
+  display:flex;justify-content:space-between;gap:12px;align-items:baseline;
+  padding:9px 0;border-bottom:1px solid var(--linha);font-size:13px;cursor:pointer;
+}
+.lista-simples li:last-child{border-bottom:0}
+.lista-simples li:hover b{text-decoration:underline}
+.lista-simples span{font-size:11.5px;color:var(--cinza-claro);white-space:nowrap}
+
+.badge.cinza{background:var(--grafite)}
+.alternar{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--grafite);cursor:pointer}
+.alternar input{width:15px;height:15px;accent-color:var(--amarelo-esc);cursor:pointer}
+
+.ktarefa{color:var(--grafite);font-weight:600}
+
+/* ================================================= ARRASTAR NO QUADRO */
+.kcard{touch-action:manipulation}
+.kcard.fantasma{
+  opacity:.95;box-shadow:0 18px 40px -14px rgba(17,17,17,.55);
+  transform:rotate(1.5deg);border-color:var(--amarelo-esc);
+}
+body.arrastando-algo{cursor:grabbing;user-select:none}
+
+/* o seletor de etapa só aparece onde não há mouse: no celular, arrastar
+   brigaria com rolar a tela, então mover vira uma lista */
+.kcard-etapa{
+  display:none;width:100%;padding:5px 8px;margin-bottom:7px;
+  font-size:11.5px;font-weight:700;cursor:pointer;
+  border:1px solid var(--linha);border-radius:7px;background:var(--fundo);
+}
+@media (hover:none){
+  .kcard-etapa{display:block}
+  .kcard{cursor:default}
+  .view-sub{display:none}
+}
 
 /* ============================================================ TOAST */
 .toast{

@@ -48,8 +48,8 @@ const BUCKET = 'anexos-projetos';
 //    dar clareza de papel a colegas, não para conter quem quer burlar.
 // =====================================================================
 const PAPEIS = {
-  gestao:    { abas: ['visao', 'quadro', 'cronograma', 'projetos', 'notificacoes'], editaProjeto: true },
-  controles: { abas: ['quadro', 'projetos'],                                       editaProjeto: false },
+  gestao:    { abas: ['visao', 'minhas', 'quadro', 'cronograma', 'notificacoes'], editaProjeto: true },
+  controles: { abas: ['quadro'],                                       editaProjeto: false },
 };
 
 const podeEditar = () => PAPEIS[estado.papel]?.editaProjeto === true;
@@ -69,10 +69,11 @@ const estado = {
   comentarios: [],
   historico: [],
   anexos: [],
+  tarefas: [],
+  modelos: [],
   lidoAte: null,
   view: 'visao',
   filtroRag: '',
-  ordem: { campo: 'prioridade', asc: true },
   editando: null,
 };
 
@@ -397,11 +398,13 @@ function aplicarPapel() {
 // DADOS
 // =====================================================================
 async function carregarTudo() {
-  const [proj, com, hist, anx, leit] = await Promise.all([
+  const [proj, com, hist, anx, tar, mod, leit] = await Promise.all([
     sb.from('projetos').select('*').eq('arquivado', false),
     sb.from('comentarios').select('*').order('criado_em', { ascending: false }).limit(200),
     sb.from('historico').select('*').order('criado_em', { ascending: false }).limit(200),
     sb.from('anexos').select('*').order('criado_em', { ascending: false }),
+    sb.from('tarefas').select('*').order('ordem', { ascending: true }),
+    sb.from('modelos').select('*').order('nome', { ascending: true }),
     sb.from('leituras').select('lido_ate').eq('user_id', estado.usuario.id).maybeSingle(),
   ]);
 
@@ -413,10 +416,14 @@ async function carregarTudo() {
   estado.projetos = proj.data || [];
   estado.comentarios = com.data || [];
   estado.historico = hist.data || [];
-  estado.anexos = anx.data || [];     // sem erro fatal: se a tabela ainda não existe, só não lista
+  // Sem erro fatal: se a tabela ainda não existe, o bloco só não aparece.
+  estado.anexos = anx.data || [];
+  estado.tarefas = tar.data || [];
+  estado.modelos = mod.data || [];
   estado.lidoAte = leit.data?.lido_ate || null;
 
-  if (anx.error) console.warn('Anexos indisponíveis — rode o 03-anexos-e-controles.sql:', anx.error.message);
+  if (anx.error) console.warn('Anexos indisponíveis — rode o 03:', anx.error.message);
+  if (tar.error) console.warn('Tarefas indisponíveis — rode o 05:', tar.error.message);
 
   renderTudo();
 }
@@ -452,6 +459,7 @@ function irPara(view) {
   $$('.nav-item').forEach((b) => b.classList.toggle('ativo', b.dataset.view === view));
   $$('.view').forEach((s) => s.classList.toggle('ativa', s.id === 'view-' + view));
   if (view === 'cronograma') renderGantt();
+  if (view === 'minhas') renderMinhas();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -468,9 +476,9 @@ function montarListaPessoas() {
 
 function renderTudo() {
   renderVisao();
+  renderMinhas();
   renderFiltros();
   montarListaPessoas();
-  renderTabela();
   renderNotificacoes();
   if (estado.view === 'cronograma') renderGantt();
   $('#rodape-atualizacao').textContent = 'Atualizado ' + fmtQuando(new Date().toISOString());
@@ -481,23 +489,27 @@ function renderTudo() {
 // =====================================================================
 function renderVisao() {
   const ps = estado.projetos;
-  const cont = { r: 0, a: 0, v: 0, s: 0, c: 0 };
+  const cont = Object.fromEntries(ORDEM_RAG.map((k) => [k, 0]));
   ps.forEach((p) => cont[calcRag(p).k]++);
 
-  const ativos = ps.filter((p) => p.status !== 'Entregue');
-  const horas = ativos.reduce((s, p) => s + Number(p.horas_mes || 0), 0);
-  const custo = ps.reduce((s, p) => s + Number(p.custo_ano || 0), 0);
+  const ativos = ps.filter((p) => p.status !== 'Entregue' && !FORA_DO_FLUXO.includes(p.status));
+  const entregues = ps.filter((p) => p.status === 'Entregue');
+  const parados = ps.filter((p) => FORA_DO_FLUXO.includes(p.status));
 
   $('#visao-sub').textContent =
-    `${ps.length} projetos no portfólio · ${ativos.length} em andamento · ${cont.c} entregues`;
+    `${ps.length} projetos · ${ativos.length} em andamento · ${entregues.length} entregues`
+    + (parados.length ? ` · ${parados.length} fora do fluxo` : '');
+
+  renderValor(ps);
+  renderRitmo(ps);
+  renderCarga(ativos);
 
   $('#kpis').innerHTML = [
-    ['destaque', 'Projetos ativos', ativos.length, 'de ' + ps.length + ' no portfólio'],
+    ['destaque', 'Em andamento', ativos.length, 'de ' + ps.length + ' no portfólio'],
     ['r', 'Atrasados', cont.r, 'prazo vencido'],
     ['a', 'Em atenção', cont.a, 'vencem em até ' + REGRAS.diasAtencao + ' dias'],
     ['v', 'No prazo', cont.v, 'sem risco de data'],
-    ['', 'Horas/mês devolvidas', fmtNum(horas, 1), 'quando as frentes ativas entrarem'],
-    ['', 'Custo evitado/ano', fmtReal(custo), 'somatório do portfólio'],
+    ['c', 'Entregues', entregues.length, 'desde o início do programa'],
   ].map(([cls, rot, num, pe]) => `
     <div class="kpi ${cls}">
       <div class="kpi-rot">${esc(rot)}</div>
@@ -536,12 +548,122 @@ function renderVisao() {
   renderQuadro();
 }
 
+// ---------------------------------------------------- VALOR DO PROGRAMA
+// O KPI antigo somava o custo evitado do portfólio inteiro, misturando o
+// que já foi entregue com o que nem começou. Isso inflava o número e não
+// respondia a pergunta que a diretoria faz: quanto disso já é real.
+function renderValor(ps) {
+  const faixas = [
+    { k: 'feito', rot: 'Já entregue', cor: 'var(--entregue)',
+      desc: 'ganho capturado, rodando hoje',
+      itens: ps.filter((p) => p.status === 'Entregue') },
+    { k: 'andando', rot: 'Em construção', cor: 'var(--amarelo-esc)',
+      desc: 'a caminho, com data marcada',
+      itens: ps.filter((p) => p.status !== 'Entregue' && !FORA_DO_FLUXO.includes(p.status)
+                              && p.etapa !== 'Fila') },
+    { k: 'fila', rot: 'Na fila', cor: 'var(--cinza-claro)',
+      desc: 'potencial ainda não iniciado',
+      itens: ps.filter((p) => p.etapa === 'Fila' && !FORA_DO_FLUXO.includes(p.status)) },
+  ];
+
+  faixas.forEach((f) => {
+    f.rs = f.itens.reduce((s, p) => s + Number(p.custo_ano || 0), 0);
+    f.hs = f.itens.reduce((s, p) => s + Number(p.horas_mes || 0), 0);
+  });
+
+  const total = faixas.reduce((s, f) => s + f.rs, 0) || 1;
+  const feito = faixas[0].rs;
+
+  $('#valor-total').innerHTML = `
+    <span class="valor-num">${fmtReal(feito)}</span>
+    <span class="valor-rot">já capturado de ${fmtReal(total)}/ano
+      · ${Math.round((feito / total) * 100)}% do programa</span>`;
+
+  $('#valor-barra').innerHTML = faixas
+    .filter((f) => f.rs)
+    .map((f) => `<span style="width:${(f.rs / total) * 100}%;background:${f.cor}"
+                       title="${esc(f.rot)}: ${fmtReal(f.rs)}"></span>`).join('');
+
+  $('#valor-blocos').innerHTML = faixas.map((f) => `
+    <div class="valor-bloco">
+      <span class="vb-marca" style="background:${f.cor}"></span>
+      <div>
+        <div class="vb-rot">${esc(f.rot)} <b>${f.itens.length}</b></div>
+        <div class="vb-num">${fmtReal(f.rs)}<small>/ano</small></div>
+        <div class="vb-pe">${f.hs ? fmtNum(f.hs, 1) + ' h/mês · ' : ''}${esc(f.desc)}</div>
+      </div>
+    </div>`).join('');
+}
+
+// ------------------------------------------------------ RITMO DE ENTREGA
+function renderRitmo(ps) {
+  const meses = [];
+  for (let i = -5; i <= 3; i++) {
+    const d = new Date(HOJE.getFullYear(), HOJE.getMonth() + i, 1);
+    meses.push({
+      ch: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      rot: MESES[d.getMonth()],
+      futuro: i > 0,
+      agora: i === 0,
+      feitos: 0, previstos: 0,
+    });
+  }
+  const achar = (ch) => meses.find((m) => m.ch === ch);
+
+  ps.forEach((p) => {
+    if (p.data_entrega) { const m = achar(p.data_entrega.slice(0, 7)); if (m) m.feitos++; }
+    else if (p.data_prevista && !FORA_DO_FLUXO.includes(p.status)) {
+      const m = achar(p.data_prevista.slice(0, 7)); if (m) m.previstos++;
+    }
+  });
+
+  const teto = Math.max(1, ...meses.map((m) => m.feitos + m.previstos));
+  $('#ritmo').innerHTML = meses.map((m) => {
+    const t = m.feitos + m.previstos;
+    return `
+      <div class="ritmo-col${m.agora ? ' agora' : ''}" title="${m.rot}: ${m.feitos} entregue(s), ${m.previstos} previsto(s)">
+        <div class="ritmo-barras">
+          ${m.previstos ? `<span class="rb prev" style="height:${(m.previstos / teto) * 100}%"></span>` : ''}
+          ${m.feitos ? `<span class="rb feito" style="height:${(m.feitos / teto) * 100}%"></span>` : ''}
+        </div>
+        <span class="ritmo-num">${t || ''}</span>
+        <span class="ritmo-mes">${m.rot}</span>
+      </div>`;
+  }).join('');
+}
+
+// -------------------------------------------------- CARGA POR RESPONSÁVEL
+function renderCarga(ativos) {
+  const porPessoa = {};
+  ativos.forEach((p) => {
+    const quem = p.responsavel || 'Sem responsável';
+    (porPessoa[quem] ||= { n: 0, h: 0, risco: 0 });
+    porPessoa[quem].n++;
+    porPessoa[quem].h += Number(p.horas_mes || 0);
+    const k = calcRag(p).k;
+    if (k === 'r' || k === 'a') porPessoa[quem].risco++;
+  });
+
+  const lista = Object.entries(porPessoa).sort((a, b) => b[1].n - a[1].n).slice(0, 8);
+  const teto = Math.max(1, ...lista.map(([, v]) => v.n));
+
+  $('#carga').innerHTML = lista.length ? lista.map(([quem, v]) => `
+    <li>
+      <span class="carga-nome">${esc(quem)}</span>
+      <span class="carga-barra"><i style="width:${(v.n / teto) * 100}%"></i></span>
+      <span class="carga-num">${v.n}</span>
+      <span class="carga-h">${v.h ? fmtNum(v.h, 0) + ' h' : '—'}</span>
+      ${v.risco ? `<span class="carga-risco" title="${v.risco} em risco de prazo">${v.risco}⚠</span>` : '<span class="carga-risco"></span>'}
+    </li>`).join('')
+    : '<li class="vazio">Nenhum projeto ativo.</li>';
+}
+
 // =====================================================================
 // QUADRO (Kanban) — arrastar muda a etapa; status e progresso mudam no
 // próprio card. A ficha completa só abre quando você clica no nome.
 // =====================================================================
 function renderQuadro() {
-  const cont = { r: 0, a: 0, v: 0, s: 0, c: 0 };
+  const cont = Object.fromEntries(ORDEM_RAG.map((k) => [k, 0]));
   estado.projetos.forEach((p) => cont[calcRag(p).k]++);
 
   $('#filtros-rag').innerHTML =
@@ -549,13 +671,10 @@ function renderQuadro() {
     ORDEM_RAG.filter((k) => cont[k]).map((k) =>
       `<button class="chip ${estado.filtroRag === k ? 'ativo' : ''}" data-rag="${k}">${RAG[k].nome} (${cont[k]})</button>`).join('');
 
-  const lista = estado.filtroRag
-    ? estado.projetos.filter((p) => calcRag(p).k === estado.filtroRag)
-    : estado.projetos;
+  const lista = ordenarCards(projetosFiltrados());
 
   $('#kanban').innerHTML = ETAPAS.map((etapa) => {
-    const ps = lista.filter((p) => p.etapa === etapa)
-      .sort((a, b) => (a.prioridade - b.prioridade) || (a.codigo || '').localeCompare(b.codigo || ''));
+    const ps = lista.filter((p) => p.etapa === etapa);
     const horas = ps.reduce((s, p) => s + Number(p.horas_mes || 0), 0);
     return `
       <section class="kcol" data-etapa="${esc(etapa)}">
@@ -573,6 +692,10 @@ function renderQuadro() {
         </div>
       </section>`;
   }).join('');
+
+  $('#contagem').textContent = lista.length === estado.projetos.length
+    ? `${estado.projetos.length} projetos no portfólio`
+    : `${lista.length} de ${estado.projetos.length} projetos · filtro ativo`;
 }
 
 function cardKanban(p) {
@@ -580,6 +703,9 @@ function cardKanban(p) {
   const dono = podeEditar();
   const coments = estado.comentarios.filter((c) => c.projeto_id === p.id);
   const nAnexos = estado.anexos.filter((a) => a.projeto_id === p.id).length;
+  const doProjeto = estado.tarefas.filter((t) => t.projeto_id === p.id);
+  const nTarefas = doProjeto.length;
+  const nFeitas = doProjeto.filter((t) => t.feita).length;
   const corte = estado.lidoAte ? new Date(estado.lidoAte) : new Date(0);
   const chamou = coments.some((c) =>
     c.autor !== estado.nome && mencionaMim(c.texto) && new Date(c.criado_em) > corte);
@@ -591,7 +717,6 @@ function cardKanban(p) {
   // antes de chegar aqui, então mexer no status não abre nada.
   return `
     <article class="kcard ${RAG[r.k].cls}${estado.destacar === p.id ? ' novinho' : ''}"
-             ${dono ? 'draggable="true"' : ''}
              data-id="${p.id}" data-abrir="${p.id}" title="Abrir a ficha completa">
       <div class="kcard-topo">
         <span class="pill ${RAG[r.k].cls}" title="${esc(r.motivo)}">${RAG[r.k].nome}</span>
@@ -602,12 +727,16 @@ function cardKanban(p) {
         <span>${esc(p.responsavel || 'sem responsável')}</span>
         ${p.horas_mes ? `<span>${fmtNum(p.horas_mes, 1)} h/mês</span>` : ''}
         ${parado ? '' : `<span>${fmtData(p.data_prevista)}</span>`}
+        ${nTarefas ? `<span class="ktarefa">${nFeitas}/${nTarefas} tarefas</span>` : ''}
         ${nAnexos ? `<span class="kanexo">${nAnexos} anexo${nAnexos > 1 ? 's' : ''}</span>` : ''}
         ${chamou ? '<span class="kmencao">@você</span>'
           : coments.length ? `<span class="kcoment">${coments.length} coment.</span>` : ''}
       </div>
       ${dono ? `
-        <select class="kcard-status" data-status="${p.id}" draggable="false" title="Mudar o status">
+        <select class="kcard-etapa" data-etapa-sel="${p.id}" title="Mover para outra etapa">
+          ${ETAPAS.map((et) => `<option${et === p.etapa ? ' selected' : ''}>${esc(et)}</option>`).join('')}
+        </select>
+        <select class="kcard-status" data-status="${p.id}" title="Mudar o status">
           ${STATUS.map((s) => `<option${s === p.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}
         </select>
         ${parado ? '' : `
@@ -648,44 +777,98 @@ function camposCompliance(valor) {
 }
 
 // ------------------------------------------------- arrastar e soltar
+// Trocamos o drag-and-drop do HTML5 por Pointer Events: o do HTML5
+// simplesmente não dispara em toque, e era por isso que o Quadro não
+// funcionava no celular.
+//
+// No dedo, porém, arrastar briga com rolar a tela — seria preciso
+// travar a rolagem em cima dos cards, o que é pior. Então no toque o
+// card ganha um botão de mover, que abre a lista de etapas.
 let arrastando = null;
+
+function ligarArrastar(kb) {
+  kb.addEventListener('pointerdown', (e) => {
+    if (!podeEditar() || (e.button ?? 0) !== 0) return;
+    if (e.pointerType === 'touch') return;              // no toque, usa o botão
+    if (e.target.closest('select, input, textarea, button, a')) return;
+
+    const card = e.target.closest('.kcard');
+    if (!card) return;
+
+    const id = card.dataset.id;
+    const inicio = { x: e.clientX, y: e.clientY };
+    let clone = null, dx = 0, dy = 0;
+
+    const limpar = () => {
+      document.removeEventListener('pointermove', mover);
+      document.removeEventListener('pointerup', largar);
+      document.removeEventListener('pointercancel', limpar);
+      card.classList.remove('arrastando');
+      document.body.classList.remove('arrastando-algo');
+      $$('.kcol').forEach((c) => c.classList.remove('alvo'));
+      if (clone) clone.remove();
+      clone = null;
+    };
+
+    const comecar = (x, y) => {
+      const r = card.getBoundingClientRect();
+      dx = x - r.left;
+      dy = y - r.top;
+      clone = card.cloneNode(true);
+      clone.classList.add('fantasma');
+      clone.style.cssText =
+        `position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;margin:0;pointer-events:none;z-index:140`;
+      document.body.appendChild(clone);
+      card.classList.add('arrastando');
+      document.body.classList.add('arrastando-algo');
+      arrastando = id;
+    };
+
+    const colunaSob = (x, y) => {
+      if (clone) clone.style.visibility = 'hidden';
+      const el = document.elementFromPoint(x, y);
+      if (clone) clone.style.visibility = '';
+      return el && el.closest('.kcol');
+    };
+
+    const mover = (ev) => {
+      if (!clone) {
+        if (Math.hypot(ev.clientX - inicio.x, ev.clientY - inicio.y) < 6) return;
+        comecar(ev.clientX, ev.clientY);
+      }
+      ev.preventDefault();
+      clone.style.left = `${ev.clientX - dx}px`;
+      clone.style.top = `${ev.clientY - dy}px`;
+      const col = colunaSob(ev.clientX, ev.clientY);
+      $$('.kcol').forEach((c) => c.classList.toggle('alvo', c === col));
+    };
+
+    const largar = (ev) => {
+      const arrastou = !!clone;
+      const col = arrastou ? colunaSob(ev.clientX, ev.clientY) : null;
+      limpar();
+      arrastando = null;
+      if (!arrastou) return;
+
+      // o clique que vem depois do arrasto não pode abrir a ficha
+      estado.arrastouAgora = Date.now();
+      if (!col) return;
+
+      const p = estado.projetos.find((x) => x.id === id);
+      if (p && p.etapa !== col.dataset.etapa) {
+        mudarCampo(id, camposParaEtapa(p, col.dataset.etapa));
+      }
+    };
+
+    document.addEventListener('pointermove', mover, { passive: false });
+    document.addEventListener('pointerup', largar);
+    document.addEventListener('pointercancel', limpar);
+  });
+}
 
 function ligarQuadro() {
   const kb = $('#kanban');
-
-  kb.addEventListener('dragstart', (e) => {
-    const card = e.target.closest('.kcard');
-    if (!card) return;
-    arrastando = card.dataset.id;
-    card.classList.add('arrastando');
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', arrastando);
-  });
-
-  kb.addEventListener('dragend', () => {
-    $$('.kcard').forEach((c) => c.classList.remove('arrastando'));
-    $$('.kcol').forEach((c) => c.classList.remove('alvo'));
-    arrastando = null;
-  });
-
-  kb.addEventListener('dragover', (e) => {
-    const col = e.target.closest('.kcol');
-    if (!col || !arrastando) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    $$('.kcol').forEach((c) => c.classList.toggle('alvo', c === col));
-  });
-
-  kb.addEventListener('drop', (e) => {
-    const col = e.target.closest('.kcol');
-    if (!col || !arrastando) return;
-    e.preventDefault();
-    const id = arrastando;
-    arrastando = null;
-    $$('.kcol').forEach((c) => c.classList.remove('alvo'));
-    const p = estado.projetos.find((x) => x.id === id);
-    if (p) mudarCampo(id, camposParaEtapa(p, col.dataset.etapa));
-  });
+  ligarArrastar(kb);
 
   // status e compliance mudam direto no card
   kb.addEventListener('change', async (e) => {
@@ -698,6 +881,13 @@ function ligarQuadro() {
       if (entregando) soltarConfete();
       return;
     }
+    const et = e.target.closest('[data-etapa-sel]');
+    if (et) {
+      const p = estado.projetos.find((x) => x.id === et.dataset.etapaSel);
+      if (p && p.etapa !== et.value) mudarCampo(p.id, camposParaEtapa(p, et.value));
+      return;
+    }
+
     const cp = e.target.closest('[data-compliance]');
     if (cp) return mudarCampo(cp.dataset.compliance, camposCompliance(cp.value));
   });
@@ -804,9 +994,26 @@ ligarQuadro();
 // CRONOGRAMA (Gantt)
 // =====================================================================
 function renderGantt() {
+  // Projeto cancelado, descontinuado ou congelado não tem prazo vigente:
+  // deixá-lo na linha do tempo faria o cronograma prometer o que ninguém
+  // vai entregar.
+  const fora = estado.projetos.filter((p) => FORA_DO_FLUXO.includes(p.status));
   const ps = estado.projetos
-    .filter((p) => p.data_prevista)
+    .filter((p) => p.data_prevista && !FORA_DO_FLUXO.includes(p.status))
     .sort((a, b) => paraData(a.data_prevista) - paraData(b.data_prevista));
+
+  const aviso = $('#fora-cronograma');
+  aviso.hidden = !fora.length;
+  if (fora.length) {
+    const nCanc = fora.filter((p) => ENCERRADOS.includes(p.status)).length;
+    const nCong = fora.length - nCanc;
+    const partes = [];
+    if (nCanc) partes.push(`${nCanc} cancelado${nCanc > 1 ? 's' : ''}`);
+    if (nCong) partes.push(`${nCong} congelado${nCong > 1 ? 's' : ''}`);
+    aviso.textContent = `Fora do cronograma: ${partes.join(' e ')}. Sem prazo vigente, não entram na linha do tempo.`;
+  }
+
+  renderLeituraCronograma(ps);
 
   if (!ps.length) { $('#gantt').innerHTML = '<p class="vazio">Nenhum projeto com data prevista.</p>'; return; }
 
@@ -876,42 +1083,155 @@ function renderGantt() {
 }
 
 // =====================================================================
-// TABELA DE PROJETOS
+// LEITURA DO CRONOGRAMA
+// Análise calculada na hora a partir das datas e dos responsáveis — não
+// é um modelo de linguagem opinando. Isso é de propósito: recalcula
+// sozinha a cada mudança, funciona sem internet, não custa nada e não
+// tem como inventar uma data que não existe.
+// =====================================================================
+function renderLeituraCronograma(ps) {
+  const achados = [];
+  const rotuloMes = (ch) => {
+    const [a, m] = ch.split('-');
+    return `${MESES[Number(m) - 1]}/${a.slice(2)}`;
+  };
+
+  if (ps.length >= 3) {
+    // 1 · meses sobrecarregados
+    const porMes = {};
+    ps.forEach((p) => {
+      const ch = p.data_prevista.slice(0, 7);
+      (porMes[ch] ||= []).push(p);
+    });
+    const meses = Object.entries(porMes).sort((a, b) => b[1].length - a[1].length);
+    const media = ps.length / Object.keys(porMes).length;
+    const [chTopo, doTopo] = meses[0];
+
+    if (doTopo.length >= 3 && doTopo.length >= media * 1.8) {
+      achados.push({
+        tipo: 'alerta',
+        txt: `<b>${rotuloMes(chTopo)}</b> concentra ${doTopo.length} entregas, contra ${media.toFixed(1)} de média nos demais meses.`,
+        det: doTopo.map((p) => p.nome).join(' · '),
+      });
+    }
+
+    // 2 · mesma pessoa com mais de uma entrega no mesmo mês
+    const sobrecarga = [];
+    Object.entries(porMes).forEach(([ch, lista]) => {
+      const porPessoa = {};
+      lista.forEach((p) => { if (p.responsavel) (porPessoa[p.responsavel] ||= []).push(p); });
+      Object.entries(porPessoa).forEach(([quem, seus]) => {
+        if (seus.length > 1) sobrecarga.push({ ch, quem, seus });
+      });
+    });
+    sobrecarga.sort((a, b) => b.seus.length - a.seus.length).slice(0, 3).forEach((s) => {
+      achados.push({
+        tipo: 'alerta',
+        txt: `<b>${esc(s.quem)}</b> responde por ${s.seus.length} entregas em ${rotuloMes(s.ch)}.`,
+        det: s.seus.map((p) => `${p.nome} (${fmtData(p.data_prevista)})`).join(' · '),
+      });
+    });
+
+    // 3 · entregas empilhadas na mesma semana
+    const porSemana = {};
+    ps.forEach((p) => {
+      const d = paraData(p.data_prevista);
+      const ch = Math.floor((d - new Date(d.getFullYear(), 0, 1)) / 604800000) + '-' + d.getFullYear();
+      (porSemana[ch] ||= []).push(p);
+    });
+    const semanaCheia = Object.values(porSemana).sort((a, b) => b.length - a.length)[0];
+    if (semanaCheia && semanaCheia.length >= 3) {
+      achados.push({
+        tipo: 'alerta',
+        txt: `${semanaCheia.length} entregas caem na mesma semana, em torno de <b>${fmtData(semanaCheia[0].data_prevista)}</b>.`,
+        det: semanaCheia.map((p) => p.nome).join(' · '),
+      });
+    }
+
+    // 4 · janelas livres à frente
+    const vazios = [];
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(HOJE.getFullYear(), HOJE.getMonth() + i, 1);
+      const ch = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!porMes[ch]) vazios.push(rotuloMes(ch));
+    }
+    if (vazios.length) {
+      achados.push({
+        tipo: 'folga',
+        txt: `Sem nenhuma entrega prevista em <b>${vazios.join(', ')}</b>.`,
+        det: 'Janela livre para puxar algo da Fila ou descongelar um projeto.',
+      });
+    }
+  }
+
+  // 5 · atrasos, que valem mesmo com poucos projetos
+  const atrasados = ps.filter((p) => calcRag(p).k === 'r');
+  if (atrasados.length) {
+    achados.unshift({
+      tipo: 'critico',
+      txt: `${atrasados.length} projeto${atrasados.length > 1 ? 's' : ''} com prazo vencido, segurando o cronograma.`,
+      det: atrasados.map((p) => `${p.nome} (${fmtData(p.data_prevista)})`).join(' · '),
+    });
+  }
+
+  // 6 · projetos sem prazo nenhum
+  const semPrazo = estado.projetos.filter(
+    (p) => !p.data_prevista && !FORA_DO_FLUXO.includes(p.status) && p.status !== 'Entregue');
+  if (semPrazo.length) {
+    achados.push({
+      tipo: 'alerta',
+      txt: `${semPrazo.length} projeto${semPrazo.length > 1 ? 's' : ''} ativo${semPrazo.length > 1 ? 's' : ''} sem data prevista — não aparece${semPrazo.length > 1 ? 'm' : ''} aqui.`,
+      det: semPrazo.map((p) => p.nome).join(' · '),
+    });
+  }
+
+  $('#leitura-cronograma').innerHTML = achados.length
+    ? achados.map((a) => `
+        <li class="${a.tipo}">
+          <span class="marca-leitura"></span>
+          <span class="txt">${a.txt}<em>${esc(a.det)}</em></span>
+        </li>`).join('')
+    : '<li class="vazio">Nada fora do lugar: as entregas estão distribuídas e ninguém está com duas no mesmo mês.</li>';
+}
+
+// =====================================================================
+// FILTROS DO QUADRO
+// A tabela separada saiu: busca, filtros e ordenação passaram a viver no
+// próprio Quadro, e o que era "exportar a lista" virou o Excel.
 // =====================================================================
 function projetosFiltrados() {
   const busca = $('#busca').value.trim().toLowerCase();
-  const fE = $('#filtro-etapa').value;
   const fS = $('#filtro-status').value;
   const fR = $('#filtro-resp').value;
 
-  let lista = estado.projetos.filter((p) => {
-    if (fE && p.etapa !== fE) return false;
+  return estado.projetos.filter((p) => {
     if (fS && p.status !== fS) return false;
     if (fR && p.responsavel !== fR) return false;
+    if (estado.filtroRag && calcRag(p).k !== estado.filtroRag) return false;
     if (busca) {
-      const alvo = [p.nome, p.codigo, p.responsavel, p.proximo_passo, p.descricao].join(' ').toLowerCase();
+      const alvo = [p.nome, p.codigo, p.responsavel, p.solicitante,
+                    p.proximo_passo, p.descricao].join(' ').toLowerCase();
       if (!alvo.includes(busca)) return false;
     }
     return true;
   });
+}
 
-  const { campo, asc } = estado.ordem;
-  const valor = (p) => {
-    if (campo === 'rag') return ORDEM_RAG.indexOf(calcRag(p).k);
-    // "acompanhar" primeiro, depois "a definir", depois "não precisa"
-    if (campo === 'compliance') return p.compliance_necessario === true ? 0
-      : p.compliance_necessario === null || p.compliance_necessario === undefined ? 1 : 2;
-    return p[campo];
-  };
-  lista.sort((a, b) => {
-    let x = valor(a);
-    let y = valor(b);
-    if (x === null || x === undefined || x === '') return 1;
-    if (y === null || y === undefined || y === '') return -1;
-    if (typeof x === 'string') return asc ? x.localeCompare(y, 'pt-BR') : y.localeCompare(x, 'pt-BR');
-    return asc ? x - y : y - x;
+function ordenarCards(lista) {
+  const campo = $('#ordem-cards').value;
+  return [...lista].sort((a, b) => {
+    if (campo === 'prioridade') {
+      return (a.prioridade - b.prioridade) || (a.nome || '').localeCompare(b.nome || '', 'pt-BR');
+    }
+    if (campo === 'nome') return (a.nome || '').localeCompare(b.nome || '', 'pt-BR');
+    if (campo === 'data_prevista') {
+      const x = a.data_prevista || '9999-12-31';
+      const y = b.data_prevista || '9999-12-31';
+      return x.localeCompare(y);
+    }
+    // horas e progresso: do maior para o menor
+    return (Number(b[campo]) || 0) - (Number(a[campo]) || 0);
   });
-  return lista;
 }
 
 // Os selects só são reconstruídos quando os dados mudam — nunca durante a
@@ -922,60 +1242,23 @@ function renderFiltros() {
     sel.innerHTML = `<option value="">${rot}</option>` +
       vals.map((v) => `<option${v === atual ? ' selected' : ''}>${esc(v)}</option>`).join('');
   };
-  opcoes($('#filtro-etapa'), ETAPAS, 'Todas as etapas');
   opcoes($('#filtro-status'), STATUS, 'Todos os status');
   opcoes($('#filtro-resp'),
-    [...new Set(estado.projetos.map((p) => p.responsavel).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [...new Set(estado.projetos.map((p) => p.responsavel).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'pt-BR')),
     'Todos os responsáveis');
 }
 
-function renderTabela() {
-  const lista = projetosFiltrados();
-
-  $('#tabela-corpo').innerHTML = lista.length ? lista.map((p) => {
-    const r = calcRag(p);
-    return `
-      <tr data-abrir="${p.id}">
-        <td class="t-cod">${esc(p.codigo || '—')}</td>
-        <td class="t-nome">${esc(p.nome)}</td>
-        <td>${esc(p.etapa)}</td>
-        <td>${esc(p.status)}</td>
-        <td>${esc(p.responsavel || '—')}</td>
-        <td class="num">${fmtNum(p.horas_mes, 1)}</td>
-        <td>${fmtData(p.data_prevista)}</td>
-        <td class="num">
-          <div class="mini-prog">
-            <div class="barra"><span style="width:${p.progresso}%"></span></div>
-            <span>${p.progresso}%</span>
-          </div>
-        </td>
-        <td><span class="pill ${RAG[r.k].cls}" title="${esc(r.motivo)}">${RAG[r.k].nome}</span></td>
-        <td>${podeEditar()
-          ? (compChave(p.compliance_necessario)
-              ? `<span class="pill comp ${COMPLIANCE[compChave(p.compliance_necessario)].cls}"
-                       title="${esc(p.compliance_obs || '')}">${COMPLIANCE[compChave(p.compliance_necessario)].rot}</span>`
-              : '<span class="comp-vazio">a definir</span>')
-          : selectCompliance(p, 'tabela-compliance')}</td>
-      </tr>`;
-  }).join('') : '<tr><td colspan="10" class="vazio">Nenhum projeto encontrado com esses filtros.</td></tr>';
-
-  $('#contagem').textContent = `${lista.length} de ${estado.projetos.length} projetos`;
-}
-
-['#busca', '#filtro-etapa', '#filtro-status', '#filtro-resp'].forEach((s) =>
-  $(s).addEventListener('input', renderTabela));
+['#busca', '#filtro-status', '#filtro-resp', '#ordem-cards'].forEach((s) =>
+  $(s).addEventListener('input', renderQuadro));
 
 $('#limpar-filtros').addEventListener('click', () => {
   $('#busca').value = '';
-  ['#filtro-etapa', '#filtro-status', '#filtro-resp'].forEach((s) => { $(s).value = ''; });
-  renderTabela();
+  ['#filtro-status', '#filtro-resp'].forEach((s) => { $(s).value = ''; });
+  $('#ordem-cards').value = 'prioridade';
+  estado.filtroRag = '';
+  renderQuadro();
 });
-
-$$('.tabela th').forEach((th) => th.addEventListener('click', () => {
-  const campo = th.dataset.ord;
-  estado.ordem = { campo, asc: estado.ordem.campo === campo ? !estado.ordem.asc : true };
-  renderTabela();
-}));
 
 // =====================================================================
 // NOTIFICAÇÕES
@@ -1109,6 +1392,7 @@ $('#form-recado').addEventListener('submit', async (e) => {
   if (!texto) return;
   const { error } = await sb.from('comentarios').insert({ projeto_id: null, autor: estado.nome, texto });
   if (error) return toast('Não foi possível publicar: ' + error.message, true);
+  await enfileirarMencoes(texto, null, 'mural');
   $('#recado-texto').value = '';
   await carregarTudo();
   toast('Recado publicado');
@@ -1159,8 +1443,17 @@ function abrirProjeto(id, etapaPadrao) {
   $('#lista-comentarios').innerHTML = doProjeto.length ? doProjeto.map(itemRecado).join('')
     : '<li class="vazio">Nenhum comentário neste projeto.</li>';
 
-  // ------------------------------------------------------- compliance
+  // ------------------------------------------------------ subtarefas
   const dono = podeEditar();
+  $('#modal-tarefas').hidden = !p;
+  if (p) renderTarefas(p.id);
+
+  // o modelo só faz sentido na criação; depois ele vive no bloco de tarefas
+  $('#campo-modelo').hidden = !!p || !dono || !estado.modelos.length;
+  $('#f-modelo').innerHTML = '<option value="">Começar do zero</option>' +
+    estado.modelos.map((m) => `<option value="${m.id}">${esc(m.nome)}</option>`).join('');
+
+  // ------------------------------------------------------- compliance
   $('#bloco-compliance').hidden = !p;
   $('#f-compliance').value = p ? compChave(p.compliance_necessario) : '';
   $('#f-compliance-obs').value = p?.compliance_obs || '';
@@ -1190,6 +1483,383 @@ function abrirProjeto(id, etapaPadrao) {
   document.body.style.overflow = 'hidden';
   if (dono) setTimeout(() => $('#f-nome').focus(), 60);
 }
+
+// =====================================================================
+// FILA DE NOTIFICAÇÕES
+// O site só ENFILEIRA. Quem manda o e-mail é a função agendada no
+// Supabase — navegador não envia e-mail, e não dá para confiar que a
+// pessoa vai estar com a aba aberta na hora.
+// =====================================================================
+async function enfileirarMencoes(texto, projetoId, origem) {
+  const alvos = mencionados(texto).filter((n) => n.toLowerCase() !== estado.nome.toLowerCase());
+  if (!alvos.length) return;
+
+  const projeto = estado.projetos.find((p) => p.id === projetoId);
+  const onde = projeto ? projeto.nome : 'no mural';
+
+  const linhas = alvos.map((quem) => ({
+    para_nome: quem,
+    assunto: `${estado.nome} marcou você em ${onde}`,
+    corpo: texto.slice(0, 1200),
+    projeto_id: projetoId || null,
+    tipo: origem || 'mencao',
+  }));
+
+  const { error } = await sb.from('notificacoes').insert(linhas);
+  if (error) console.warn('Fila de notificações indisponível:', error.message);
+}
+
+// =====================================================================
+// MINHAS TAREFAS
+// =====================================================================
+function renderMinhas() {
+  const todas = $('#ver-todas-tarefas').checked;
+  const meu = estado.nome.toLowerCase();
+
+  const ativas = estado.tarefas.filter((t) => {
+    if (t.feita) return false;
+    const proj = estado.projetos.find((p) => p.id === t.projeto_id);
+    if (!proj || FORA_DO_FLUXO.includes(proj.status)) return false;
+    return todas || (t.responsavel || '').toLowerCase() === meu;
+  });
+
+  // projetos sob minha responsabilidade que ainda não foram quebrados em tarefas
+  const semTarefa = estado.projetos.filter((p) =>
+    !FORA_DO_FLUXO.includes(p.status) && p.status !== 'Entregue'
+    && !estado.tarefas.some((t) => t.projeto_id === p.id)
+    && (todas || (p.responsavel || '').toLowerCase() === meu));
+
+  const dias = (d) => (d ? Math.round((paraData(d) - HOJE) / 86400000) : null);
+
+  const baldes = [
+    { k: 'atrasada', rot: 'Atrasadas', teste: (d) => d !== null && d < 0 },
+    { k: 'hoje', rot: 'Para hoje', teste: (d) => d === 0 },
+    { k: 'semana', rot: 'Próximos 7 dias', teste: (d) => d > 0 && d <= 7 },
+    { k: 'depois', rot: 'Mais adiante', teste: (d) => d > 7 },
+    { k: 'sem', rot: 'Sem prazo', teste: (d) => d === null },
+  ];
+
+  const atrasadas = ativas.filter((t) => dias(t.prazo) !== null && dias(t.prazo) < 0).length;
+  const paraHoje = ativas.filter((t) => dias(t.prazo) === 0).length;
+
+  const n = ativas.length;
+  $('#minhas-sub').textContent = (todas
+    ? `${n} tarefa${n === 1 ? '' : 's'} aberta${n === 1 ? '' : 's'} no time`
+    : `${n} tarefa${n === 1 ? '' : 's'} sua${n === 1 ? '' : 's'} em aberto`)
+    + (atrasadas ? ` · ${atrasadas} atrasada${atrasadas > 1 ? 's' : ''}` : '')
+    + (paraHoje ? ` · ${paraHoje} para hoje` : '');
+
+  const badge = $('#badge-minhas');
+  const meuTotal = estado.tarefas.filter((t) =>
+    !t.feita && (t.responsavel || '').toLowerCase() === meu
+    && dias(t.prazo) !== null && dias(t.prazo) <= 0).length;
+  badge.textContent = meuTotal;
+  badge.hidden = meuTotal === 0;
+
+  const itemTarefa = (t) => {
+    const proj = estado.projetos.find((p) => p.id === t.projeto_id);
+    const pai = t.depende_de ? estado.tarefas.find((x) => x.id === t.depende_de) : null;
+    const travada = pai && !pai.feita;
+    const d = dias(t.prazo);
+    return `
+      <li class="${travada ? 'travada' : ''}">
+        <input type="checkbox" class="tarefa-check" data-minha="${t.id}"
+               ${travada || !podeEditar() ? 'disabled' : ''}
+               title="${travada ? 'Depende de: ' + esc(pai.titulo) : 'Marcar como concluída'}">
+        <div class="tarefa-corpo">
+          <span class="tarefa-titulo">${textoComMencoes(t.titulo)}</span>
+          <span class="tarefa-meta">
+            <b data-abrir="${t.projeto_id}">${esc(proj ? proj.nome : '—')}</b>
+            ${t.prazo ? `<span class="${d < 0 ? 'venceu' : ''}">${fmtData(t.prazo)}</span>` : '<i>sem prazo</i>'}
+            ${todas && t.responsavel ? `<span>${esc(t.responsavel)}</span>` : ''}
+            ${travada ? `<span class="tarefa-dep">espera: ${esc(pai.titulo)}</span>` : ''}
+          </span>
+        </div>
+      </li>`;
+  };
+
+  let html = baldes.map((b) => {
+    const itens = ativas.filter((t) => b.teste(dias(t.prazo)))
+      .sort((x, y) => (x.prazo || '9999').localeCompare(y.prazo || '9999'));
+    if (!itens.length) return '';
+    return `
+      <div class="painel bloco-minhas ${b.k}">
+        <h3>${b.rot} <span class="cont">${itens.length}</span></h3>
+        <ul class="lista-tarefas">${itens.map(itemTarefa).join('')}</ul>
+      </div>`;
+  }).join('');
+
+  if (semTarefa.length) {
+    html += `
+      <div class="painel bloco-minhas sem">
+        <h3>Projetos sem tarefas <span class="cont">${semTarefa.length}</span></h3>
+        <p class="dica-bloco">Ainda não foram quebrados em passos. Abra e use um modelo para começar.</p>
+        <ul class="lista-simples">
+          ${semTarefa.map((p) => `
+            <li data-abrir="${p.id}">
+              <b>${esc(p.nome)}</b>
+              <span>${esc(p.status)} · ${fmtData(p.data_prevista)}</span>
+            </li>`).join('')}
+        </ul>
+      </div>`;
+  }
+
+  $('#minhas-listas').innerHTML = html
+    || '<div class="painel"><p class="vazio">Nada em aberto no seu nome. Bom sinal.</p></div>';
+}
+
+$('#ver-todas-tarefas').addEventListener('change', renderMinhas);
+
+$('#minhas-listas').addEventListener('change', async (e) => {
+  const chk = e.target.closest('[data-minha]');
+  if (!chk) return;
+  const r = await sb.from('tarefas')
+    .update({ feita: true, feita_por: estado.nome }).eq('id', chk.dataset.minha);
+  if (r.error) {
+    chk.checked = false;
+    return toast(r.error.message.replace('Conclua antes a tarefa', 'Primeiro conclua'), true);
+  }
+  await carregarTudo();
+  toast('Tarefa concluída');
+});
+
+// ------------------------------- CALENDÁRIO (.ics para Outlook/Google)
+$('#btn-ics').addEventListener('click', () => {
+  const todas = $('#ver-todas-tarefas').checked;
+  const meu = estado.nome.toLowerCase();
+
+  const eventos = [];
+  estado.tarefas.filter((t) => !t.feita && t.prazo
+    && (todas || (t.responsavel || '').toLowerCase() === meu))
+    .forEach((t) => {
+      const proj = estado.projetos.find((p) => p.id === t.projeto_id);
+      eventos.push({ id: t.id, data: t.prazo, titulo: t.titulo, onde: proj?.nome || '' });
+    });
+
+  estado.projetos.filter((p) => p.data_prevista && p.status !== 'Entregue'
+    && !FORA_DO_FLUXO.includes(p.status)
+    && (todas || (p.responsavel || '').toLowerCase() === meu))
+    .forEach((p) => {
+      eventos.push({ id: p.id, data: p.data_prevista, titulo: `Entrega: ${p.nome}`, onde: p.proximo_passo || '' });
+    });
+
+  if (!eventos.length) return toast('Nada com data para exportar.', true);
+
+  const limpo = (s) => String(s || '').replace(/[\\;,]/g, ' ').replace(/\r?\n/g, ' ').slice(0, 180);
+  const semTraco = (d) => d.replace(/-/g, '');
+  const agora = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+  const ics = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//CIMED//Gestao de Projetos//PT-BR',
+    'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:Projetos CIMED',
+    ...eventos.flatMap((ev) => {
+      const fim = new Date(paraData(ev.data));
+      fim.setDate(fim.getDate() + 1);
+      const fimTxt = `${fim.getFullYear()}${String(fim.getMonth() + 1).padStart(2, '0')}${String(fim.getDate()).padStart(2, '0')}`;
+      return [
+        'BEGIN:VEVENT',
+        `UID:${ev.id}@projetos.cimed`,
+        `DTSTAMP:${agora}`,
+        `DTSTART;VALUE=DATE:${semTraco(ev.data)}`,
+        `DTEND;VALUE=DATE:${fimTxt}`,
+        `SUMMARY:${limpo(ev.titulo)}`,
+        `DESCRIPTION:${limpo(ev.onde)}`,
+        'BEGIN:VALARM', 'TRIGGER:-P1D', 'ACTION:DISPLAY',
+        `DESCRIPTION:${limpo(ev.titulo)}`, 'END:VALARM',
+        'END:VEVENT',
+      ];
+    }),
+    'END:VCALENDAR',
+  ].join('\r\n');
+
+  const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Projetos CIMED ${isoHoje()}.ics`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast(`${eventos.length} prazos exportados — abra o arquivo no Outlook`);
+});
+
+// =====================================================================
+// SUBTAREFAS
+// Projeto com tarefas não tem progresso digitado na mão: o banco calcula
+// a porcentagem de concluídas. Uma tarefa que depende de outra só fecha
+// depois dela — e quem barra é o Postgres, não a tela.
+// =====================================================================
+const tarefasDe = (projetoId) =>
+  estado.tarefas.filter((t) => t.projeto_id === projetoId)
+    .sort((a, b) => a.ordem - b.ordem || a.criado_em.localeCompare(b.criado_em));
+
+function renderTarefas(projetoId) {
+  const lista = tarefasDe(projetoId);
+  const dono = podeEditar();
+  const feitas = lista.filter((t) => t.feita).length;
+
+  $('#tarefas-resumo').textContent = lista.length
+    ? `${feitas} de ${lista.length} concluídas · o progresso do projeto vem daqui`
+    : 'nenhuma ainda — o progresso segue no controle manual';
+
+  $('#lista-tarefas').innerHTML = lista.length ? lista.map((t) => {
+    const pai = t.depende_de ? lista.find((x) => x.id === t.depende_de) : null;
+    const travada = pai && !pai.feita;
+    const atrasada = !t.feita && t.prazo && paraData(t.prazo) < HOJE;
+
+    return `
+      <li class="${t.feita ? 'feita' : ''}${travada ? ' travada' : ''}">
+        <input type="checkbox" class="tarefa-check" data-tarefa="${t.id}"
+               ${t.feita ? 'checked' : ''} ${!dono || travada ? 'disabled' : ''}
+               title="${travada ? 'Depende de: ' + esc(pai.titulo) : 'Marcar como concluída'}">
+        <div class="tarefa-corpo">
+          <span class="tarefa-titulo">${textoComMencoes(t.titulo)}</span>
+          <span class="tarefa-meta">
+            ${t.responsavel ? `<b>${esc(t.responsavel)}</b>` : '<i>sem responsável</i>'}
+            ${t.prazo ? `<span class="${atrasada ? 'venceu' : ''}">${fmtData(t.prazo)}</span>` : ''}
+            ${pai ? `<span class="tarefa-dep">depois de: ${esc(pai.titulo)}</span>` : ''}
+            ${t.feita && t.feita_por ? `<span>✓ ${esc(t.feita_por)}</span>` : ''}
+          </span>
+        </div>
+        ${dono ? `
+          <select class="tarefa-dep-sel" data-dep="${t.id}" title="Esta tarefa só pode fechar depois de…">
+            <option value="">sem dependência</option>
+            ${lista.filter((o) => o.id !== t.id)
+              .map((o) => `<option value="${o.id}"${o.id === t.depende_de ? ' selected' : ''}>depois de: ${esc(o.titulo.slice(0, 40))}</option>`).join('')}
+          </select>
+          <button type="button" class="tarefa-apagar" data-apagar-tarefa="${t.id}" title="Remover">×</button>` : ''}
+      </li>`;
+  }).join('')
+    : '<li class="vazio">Nenhuma tarefa. Quebre o projeto em passos para acompanhar de perto.</li>';
+
+  $('#form-tarefa').hidden = !dono;
+  $('#linha-modelo').hidden = !dono || !estado.modelos.length;
+
+  $('#sel-modelo').innerHTML = '<option value="">Preencher a partir de um modelo…</option>' +
+    estado.modelos.map((m) => `<option value="${m.id}">${esc(m.nome)}</option>`).join('');
+}
+
+$('#form-tarefa').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const titulo = $('#tarefa-titulo').value.trim();
+  if (!titulo || !estado.editando) return;
+
+  const irmas = tarefasDe(estado.editando);
+  const { error } = await sb.from('tarefas').insert({
+    projeto_id: estado.editando,
+    titulo,
+    responsavel: $('#tarefa-resp').value.trim() || null,
+    prazo: $('#tarefa-prazo').value || null,
+    ordem: irmas.length ? Math.max(...irmas.map((t) => t.ordem)) + 1 : 0,
+    criado_por: estado.nome,
+  });
+  if (error) return toast('Não consegui criar a tarefa: ' + error.message, true);
+
+  await enfileirarMencoes(titulo, estado.editando, 'tarefa');
+  $('#tarefa-titulo').value = '';
+  $('#tarefa-prazo').value = '';
+  const id = estado.editando;
+  await carregarTudo();
+  renderTarefas(id);
+});
+
+$('#lista-tarefas').addEventListener('change', async (e) => {
+  const chk = e.target.closest('[data-tarefa]');
+  if (chk) {
+    const id = chk.dataset.tarefa;
+    const r = await sb.from('tarefas')
+      .update({ feita: chk.checked, feita_por: chk.checked ? estado.nome : null })
+      .eq('id', id);
+    if (r.error) {
+      chk.checked = !chk.checked;
+      return toast(r.error.message.replace('Conclua antes a tarefa', 'Primeiro conclua'), true);
+    }
+    const proj = estado.editando;
+    await carregarTudo();
+    renderTarefas(proj);
+
+    // todas concluídas: a comemoração é merecida
+    const agora = tarefasDe(proj);
+    if (agora.length && agora.every((t) => t.feita)) soltarConfete();
+    return;
+  }
+
+  const dep = e.target.closest('[data-dep]');
+  if (dep) {
+    const r = await sb.from('tarefas')
+      .update({ depende_de: dep.value || null }).eq('id', dep.dataset.dep);
+    if (r.error) return toast('Erro na dependência: ' + r.error.message, true);
+    const proj = estado.editando;
+    await carregarTudo();
+    renderTarefas(proj);
+  }
+});
+
+$('#lista-tarefas').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-apagar-tarefa]');
+  if (!btn) return;
+  const t = estado.tarefas.find((x) => x.id === btn.dataset.apagarTarefa);
+  if (!t) return;
+
+  const ok = await confirmar({
+    titulo: 'Remover tarefa',
+    texto: `A tarefa "${t.titulo}" será apagada do projeto.`,
+    perdas: estado.tarefas.some((x) => x.depende_de === t.id)
+      ? ['Outra tarefa depende desta e ficará sem dependência'] : [],
+    rotulo: 'Remover tarefa',
+  });
+  if (!ok) return;
+
+  const r = await sb.from('tarefas').delete().eq('id', t.id);
+  if (r.error) return toast('Erro ao remover: ' + r.error.message, true);
+  const proj = estado.editando;
+  await carregarTudo();
+  renderTarefas(proj);
+});
+
+// ------------------------------------------------- MODELOS DE PROJETO
+// Cria as tarefas do modelo em cadeia: cada uma depende da anterior, e o
+// prazo sai do início do projeto mais os dias previstos no modelo.
+async function aplicarModelo(modeloId, projetoId, projetoRecemCriado) {
+  const modelo = estado.modelos.find((m) => m.id === modeloId);
+  // num projeto recém-criado ele ainda não está no estado: usamos o que voltou do banco
+  const projeto = projetoRecemCriado || estado.projetos.find((p) => p.id === projetoId);
+  if (!modelo || !projeto) return;
+
+  // Conta a partir de hoje quando o projeto já começou há tempos: um
+  // modelo aplicado agora não deve nascer com todas as tarefas vencidas.
+  const inicio = paraData(projeto.data_inicio);
+  const base = !inicio || inicio < HOJE ? HOJE : inicio;
+  const jaTem = tarefasDe(projetoId).length;
+  let anterior = null;
+
+  for (const [i, passo] of (modelo.tarefas || []).entries()) {
+    const prazo = new Date(base);
+    prazo.setDate(prazo.getDate() + (Number(passo.dias) || 0));
+
+    const r = await sb.from('tarefas').insert({
+      projeto_id: projetoId,
+      titulo: passo.titulo,
+      prazo: `${prazo.getFullYear()}-${String(prazo.getMonth() + 1).padStart(2, '0')}-${String(prazo.getDate()).padStart(2, '0')}`,
+      responsavel: projeto.responsavel || null,
+      ordem: jaTem + i,
+      depende_de: anterior,
+      criado_por: estado.nome,
+    }).select().single();
+
+    if (r.error) { toast('Erro ao aplicar o modelo: ' + r.error.message, true); break; }
+    anterior = r.data.id;
+  }
+}
+
+$('#btn-aplicar-modelo').addEventListener('click', async () => {
+  const id = $('#sel-modelo').value;
+  if (!id || !estado.editando) return toast('Escolha um modelo primeiro.', true);
+  const proj = estado.editando;
+  await aplicarModelo(id, proj);
+  await carregarTudo();
+  renderTarefas(proj);
+  $('#sel-modelo').value = '';
+  toast('Modelo aplicado');
+});
 
 // ---------------------------------------------------- lista de anexos
 function renderAnexos(projetoId) {
@@ -1280,9 +1950,18 @@ $('#form-projeto').addEventListener('submit', async (e) => {
   }
 
   const ehNovo = !estado.editando;
+  const modeloEscolhido = ehNovo ? $('#f-modelo').value : '';
 
   try {
     const salvo = await salvarProjeto(estado.editando, campos);
+
+    // as menções escritas nos campos do projeto viram aviso por e-mail
+    await enfileirarMencoes(
+      [campos.proximo_passo, campos.descricao, campos.observacoes].filter(Boolean).join(' '),
+      salvo?.id, 'projeto');
+
+    if (modeloEscolhido && salvo?.id) await aplicarModelo(modeloEscolhido, salvo.id, salvo);
+
     fecharModal();
 
     // Projeto novo nasce na Fila, que é a 3ª coluna. Em vez de deixar
@@ -1335,6 +2014,7 @@ $('#form-comentario').addEventListener('submit', async (e) => {
   const { error } = await sb.from('comentarios')
     .insert({ projeto_id: estado.editando, autor: estado.nome, texto });
   if (error) return toast('Erro ao comentar: ' + error.message, true);
+  await enfileirarMencoes(texto, estado.editando, 'comentario');
   $('#comentario-texto').value = '';
   const id = estado.editando;
   await carregarTudo();
@@ -1343,6 +2023,67 @@ $('#form-comentario').addEventListener('submit', async (e) => {
 });
 
 $('#btn-novo').addEventListener('click', () => abrirProjeto(null));
+
+// =====================================================================
+// EXPORTAR EXCEL — leva o que está filtrado na tela, com TODOS os campos
+// (inclusive os que o card não mostra: custo, datas, observações)
+// =====================================================================
+$('#btn-excel').addEventListener('click', async () => {
+  const lista = ordenarCards(projetosFiltrados());
+  if (!lista.length) return toast('Nada para exportar com esse filtro.', true);
+
+  toast('Montando a planilha…');
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
+    const XLSX = mod.default || mod;
+    const data = (v) => (v ? fmtData(v) : '');
+
+    const linhas = lista.map((p) => {
+      const r = calcRag(p);
+      const ck = compChave(p.compliance_necessario);
+      return {
+        'Código': p.codigo || '',
+        'Projeto': p.nome,
+        'Etapa': p.etapa,
+        'Status': p.status,
+        'Semáforo': RAG[r.k].nome,
+        'Situação': r.motivo,
+        'Responsável': p.responsavel || '',
+        'Solicitante': p.solicitante || '',
+        'Horas/mês': p.horas_mes ?? '',
+        'Custo evitado/ano (R$)': p.custo_ano ?? '',
+        'Início': data(p.data_inicio),
+        'Previsão de entrega': data(p.data_prevista),
+        'Entregue em': data(p.data_entrega),
+        'Progresso (%)': p.progresso,
+        'Prioridade': p.prioridade,
+        'Próximo passo': p.proximo_passo || '',
+        'Motivo da parada': p.motivo_parada || '',
+        'Compliance': ck ? COMPLIANCE[ck].rot : 'a definir',
+        'Observação do Compliance': p.compliance_obs || '',
+        'Anexos': estado.anexos.filter((a) => a.projeto_id === p.id).length,
+        'Comentários': estado.comentarios.filter((c) => c.projeto_id === p.id).length,
+        'Observações': p.observacoes || '',
+        'Atualizado em': p.atualizado_em ? new Date(p.atualizado_em).toLocaleString('pt-BR') : '',
+        'Atualizado por': p.atualizado_por || '',
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(linhas);
+    ws['!cols'] = Object.keys(linhas[0]).map((k) => ({
+      wch: ['Projeto', 'Próximo passo', 'Observações', 'Observação do Compliance', 'Motivo da parada']
+        .includes(k) ? 42 : Math.max(12, k.length + 3),
+    }));
+    ws['!autofilter'] = { ref: ws['!ref'] };
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Projetos');
+    XLSX.writeFile(wb, `Projetos CIMED ${isoHoje()}.xlsx`);
+    toast(`Planilha gerada com ${linhas.length} projetos`);
+  } catch (err) {
+    toast('Não consegui gerar a planilha: ' + err.message, true);
+  }
+});
 
 // =====================================================================
 // COMPLIANCE — o bloco que o time de Controles responde
@@ -1511,13 +2252,21 @@ function pararDitado() {
 
 ligarDitado();
 
+// =====================================================================
+// APP INSTALÁVEL (PWA)
+// Guarda só a casca do site para abrir rápido no celular. Dado de
+// projeto nunca fica no cache: sem rede o app diz que não conectou,
+// em vez de mostrar número velho como se fosse o de agora.
+// =====================================================================
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js')
+      .catch((err) => console.warn('Service worker não registrado:', err.message));
+  });
+}
+
 // ------------------------------------------------- abrir/fechar genéricos
 // A tabela também responde o Compliance, sem abrir a ficha.
-$('#tabela').addEventListener('change', (e) => {
-  const cp = e.target.closest('[data-compliance]');
-  if (cp) mudarCampo(cp.dataset.compliance, camposCompliance(cp.value));
-});
-
 document.addEventListener('click', (e) => {
   // a confirmação vem antes de tudo: enquanto ela estiver aberta,
   // nenhum outro clique da tela deve valer
@@ -1525,8 +2274,11 @@ document.addEventListener('click', (e) => {
   if (!$('#confirmar').hidden) return;
 
   // clique em campo de formulário nunca abre a ficha: senão mexer no
-  // seletor de Compliance dentro de uma linha da tabela abriria o modal
+  // seletor de Compliance ou de etapa abriria o modal junto
   if (e.target.closest('select, input, textarea')) return;
+
+  // o clique que o navegador dispara ao fim de um arrasto não conta
+  if (estado.arrastouAgora && Date.now() - estado.arrastouAgora < 400) return;
 
   if (e.target.closest('[data-fechar]')) return fecharModal();
 
