@@ -27,8 +27,10 @@ export const SUPABASE_ANON_KEY = 'sb_publishable_1lAnQar90ILppiGDPOLKLg_s-qi7eaS
 //    não ganha acesso total. Se alguém reclamar que só vê duas abas, é
 //    porque o e-mail dela não está escrito aqui exatamente igual.
 export const PESSOAS = {
-  'josianny.silva@grupocimed.com.br': { nome: 'Josianny', papel: 'gestao' },
-  'melissa.dias@grupocimed.com.br':   { nome: 'Melissa',  papel: 'gestao' },
+  'josianny.silva@grupocimed.com.br':   { nome: 'Josianny', papel: 'gestao' },
+  'melissa.dias@grupocimed.com.br':     { nome: 'Melissa',  papel: 'gestao' },
+  'josilene.guersoni@grupocimed.com.br': { nome: 'Josilene', papel: 'gestao' },
+  'larissa.silva1@grupocimed.com.br':   { nome: 'Larissa',  papel: 'gestao' },
 
   // Compliance · Renata de Souza Luz Moraes
   'renata.moraes@grupocimed.com.br': { nome: 'Renata', papel: 'controles' },

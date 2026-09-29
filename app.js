@@ -18,6 +18,8 @@ const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // ETAPAS deixou de ser fixo — ele é recalculado quando o programa muda.
 // =====================================================================
 let ETAPAS = ['Prioritário', 'Protótipo e ajustes', 'Fila', 'Entregue', 'Congelado / Cancelado'];
+let PILARES = [];   // [{ nome, curto, cor }] — vazio esconde o campo
+const pilarDe = (nome) => PILARES.find((p) => p.nome === nome);
 let ETAPA_PARADA = 'Congelado / Cancelado';
 let ETAPA_ENTREGUE = 'Entregue';
 
@@ -36,6 +38,12 @@ function aplicarPrograma(id) {
   const etapas = [];
   alvo.forEach((pr) => (pr.etapas || []).forEach((e) => {
     if (!etapas.some((x) => x.nome === e.nome)) etapas.push(e);
+  }));
+
+  // Pilares também vêm do programa: quem não tem, não vê o campo.
+  PILARES = [];
+  alvo.forEach((pr) => (pr.pilares || []).forEach((pl) => {
+    if (!PILARES.some((x) => x.nome === pl.nome)) PILARES.push(pl);
   }));
 
   ETAPAS = etapas.map((e) => e.nome);
@@ -595,6 +603,7 @@ function renderVisao() {
     + (parados.length ? ` · ${parados.length} fora do fluxo` : '');
 
   renderValor(ps);
+  renderPilares(ps);
   renderRitmo(ps);
   renderCarga(ativos);
 
@@ -687,6 +696,51 @@ function renderValor(ps) {
         <div class="vb-pe">${f.hs ? fmtNum(f.hs, 1) + ' h/mês · ' : ''}${esc(f.desc)}</div>
       </div>
     </div>`).join('');
+}
+
+// --------------------------------------------------- FRENTES POR PILAR
+// É o recorte do deck: quantas frentes, quanto valem e em que fase estão.
+// Sai do banco, então não precisa ser refeito à mão a cada apresentação.
+function renderPilares(ps) {
+  $('#painel-pilares').hidden = !PILARES.length;
+  if (!PILARES.length) return;
+
+  const grupos = PILARES.map((pl) => ({ ...pl, itens: ps.filter((p) => p.pilar === pl.nome) }));
+  const semPilar = ps.filter((p) => !p.pilar);
+  if (semPilar.length) {
+    grupos.push({ nome: 'Sem pilar definido', curto: 'Sem pilar',
+                  cor: 'var(--cinza-claro)', itens: semPilar, orfao: true });
+  }
+
+  $('#pilares').innerHTML = grupos.map((g) => {
+    const horas = g.itens.reduce((s, p) => s + Number(p.horas_mes || 0), 0);
+    const custo = g.itens.reduce((s, p) => s + Number(p.custo_ano || 0), 0);
+
+    // a quebra por fase, na ordem em que a leitura faz sentido
+    const fases = [
+      ['Entregues', g.itens.filter((p) => p.status === 'Entregue').length],
+      ['Em andamento', g.itens.filter((p) => !['Entregue', 'Não iniciado'].includes(p.status)
+        && !FORA_DO_FLUXO.includes(p.status)).length],
+      ['Não iniciadas', g.itens.filter((p) => p.status === 'Não iniciado').length],
+      ['Fora do fluxo', g.itens.filter((p) => FORA_DO_FLUXO.includes(p.status)).length],
+    ].filter(([, n]) => n);
+
+    return `
+      <div class="pilar-bloco${g.orfao ? ' orfao' : ''}" style="--pcor:${g.cor}">
+        <div class="pilar-topo">
+          <span class="pilar-nome">${esc(g.nome)}</span>
+          <span class="pilar-n">${g.itens.length}</span>
+        </div>
+        <div class="pilar-numeros">
+          ${horas ? `<span><b>${fmtNum(horas, 1)}</b> h/mês</span>` : ''}
+          ${custo ? `<span><b>${fmtReal(custo)}</b>/ano</span>` : ''}
+          ${!horas && !custo ? '<span class="sem-meta">sem meta financeira</span>' : ''}
+        </div>
+        <ul class="pilar-fases">
+          ${fases.map(([rot, n]) => `<li><span>${rot}</span><b>${n}</b></li>`).join('')}
+        </ul>
+      </div>`;
+  }).join('');
 }
 
 // ------------------------------------------------------ RITMO DE ENTREGA
@@ -804,6 +858,7 @@ function cardKanban(p) {
   const chamou = coments.some((c) =>
     c.autor !== estado.nome && mencionaMim(c.texto) && new Date(c.criado_em) > corte);
   const ck = compChave(p.compliance_necessario);
+  const pl = pilarDe(p.pilar);
 
   const parado = FORA_DO_FLUXO.includes(p.status);
 
@@ -813,6 +868,7 @@ function cardKanban(p) {
     <article class="kcard ${RAG[r.k].cls}${estado.destacar === p.id ? ' novinho' : ''}"
              data-id="${p.id}" data-abrir="${p.id}" title="Abrir a ficha completa">
       <div class="kcard-topo">
+        ${pl ? `<span class="kpilar" style="--pcor:${pl.cor}" title="${esc(pl.nome)}">${esc(pl.curto || pl.nome)}</span>` : ''}
         <span class="pill ${RAG[r.k].cls}" title="${esc(r.motivo)}">${RAG[r.k].nome}</span>
         ${dono && ck === 'sim' ? '<span class="kcomp sim">Compliance</span>' : ''}
       </div>
@@ -1298,10 +1354,12 @@ function projetosFiltrados() {
   const busca = $('#busca').value.trim().toLowerCase();
   const fS = $('#filtro-status').value;
   const fR = $('#filtro-resp').value;
+  const fP = $('#filtro-pilar').value;
 
   return estado.projetos.filter((p) => {
     if (fS && p.status !== fS) return false;
     if (fR && p.responsavel !== fR) return false;
+    if (fP && (p.pilar || '') !== fP) return false;
     if (estado.filtroRag && calcRag(p).k !== estado.filtroRag) return false;
     if (busca) {
       const alvo = [p.nome, p.codigo, p.responsavel, p.solicitante,
@@ -1342,14 +1400,18 @@ function renderFiltros() {
     [...new Set(estado.projetos.map((p) => p.responsavel).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, 'pt-BR')),
     'Todos os responsáveis');
+
+  // o filtro de pilar só existe se o programa em foco tiver pilares
+  $('#filtro-pilar').hidden = !PILARES.length;
+  opcoes($('#filtro-pilar'), PILARES.map((pl) => pl.nome), 'Todos os pilares');
 }
 
-['#busca', '#filtro-status', '#filtro-resp', '#ordem-cards'].forEach((s) =>
+['#busca', '#filtro-status', '#filtro-resp', '#filtro-pilar', '#ordem-cards'].forEach((s) =>
   $(s).addEventListener('input', renderQuadro));
 
 $('#limpar-filtros').addEventListener('click', () => {
   $('#busca').value = '';
-  ['#filtro-status', '#filtro-resp'].forEach((s) => { $(s).value = ''; });
+  ['#filtro-status', '#filtro-resp', '#filtro-pilar'].forEach((s) => { $(s).value = ''; });
   $('#ordem-cards').value = 'prioridade';
   estado.filtroRag = '';
   renderQuadro();
@@ -1509,6 +1571,11 @@ $('#btn-marcar-lido').addEventListener('click', async () => {
 function montarSelects() {
   $('#f-etapa').innerHTML = ETAPAS.map((v) => `<option>${esc(v)}</option>`).join('');
   $('#f-status').innerHTML = STATUS.map((v) => `<option>${esc(v)}</option>`).join('');
+
+  // o campo de pilar só existe onde o programa define pilares
+  $('#campo-pilar').hidden = !PILARES.length;
+  $('#f-pilar').innerHTML = '<option value="">Sem pilar definido</option>' +
+    PILARES.map((pl) => `<option value="${esc(pl.nome)}">${esc(pl.nome)}</option>`).join('');
 }
 
 function abrirProjeto(id, etapaPadrao) {
@@ -1526,7 +1593,8 @@ function abrirProjeto(id, etapaPadrao) {
   };
   ['nome', 'descricao', 'codigo', 'responsavel', 'solicitante', 'etapa', 'status',
    'data_inicio', 'data_prevista', 'data_entrega', 'prioridade', 'horas_mes',
-   'custo_ano', 'progresso', 'proximo_passo', 'motivo_parada', 'observacoes'].forEach((campo) => {
+   'custo_ano', 'progresso', 'proximo_passo', 'motivo_parada', 'observacoes',
+   'pilar'].forEach((campo) => {
     f.elements[campo].value = vals[campo] ?? '';
   });
   $('#out-progresso').textContent = (vals.progresso || 0) + '%';
@@ -2024,6 +2092,7 @@ $('#form-projeto').addEventListener('submit', async (e) => {
     data_prevista: f.elements.data_prevista.value || null,
     data_entrega: f.elements.data_entrega.value || null,
     prioridade: num(f.elements.prioridade.value) || 3,
+    pilar: txt(f.elements.pilar.value),
     programa_id: estado.programaAtivo
       || estado.programas.find((pr) => pr.nome === 'Programa de IA')?.id
       || estado.programas[0]?.id || null,
@@ -2143,6 +2212,7 @@ $('#btn-excel').addEventListener('click', async () => {
         'Programa': estado.programas.find((pr) => pr.id === p.programa_id)?.nome || '',
         'Código': p.codigo || '',
         'Projeto': p.nome,
+        'Pilar': p.pilar || '',
         'Etapa': p.etapa,
         'Status': p.status,
         'Semáforo': RAG[r.k].nome,

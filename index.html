@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gestão de Projetos · CIMED</title>
 <meta name="description" content="Painel de acompanhamento dos projetos de transformação digital do RH CIMED.">
-<link rel="icon" type="image/svg+xml" href="favicon.svg?v=13">
+<link rel="icon" type="image/svg+xml" href="favicon.svg?v=14">
 
 <!-- instalável no celular: abre em tela cheia, sem barra do navegador -->
-<link rel="manifest" href="manifest.json?v=13">
+<link rel="manifest" href="manifest.json?v=14">
 <meta name="theme-color" content="#FFD200">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -20,7 +20,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- O ?v= força o navegador a buscar a versão nova em vez da guardada em cache.
      SEMPRE que alterar style.css ou app.js, some 1 nos dois números abaixo. -->
-<link rel="stylesheet" href="style.css?v=13">
+<link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
 
@@ -133,6 +133,12 @@
 
       <div class="kpis" id="kpis"></div>
 
+      <div class="painel largo pilares-painel" id="painel-pilares" hidden>
+        <h3>Frentes por pilar</h3>
+        <p class="dica-bloco">O mesmo recorte do deck, recalculado a partir dos projetos de agora.</p>
+        <div class="pilares" id="pilares"></div>
+      </div>
+
       <div class="painel-duplo">
         <div class="painel">
           <h3>Ritmo de entrega</h3>
@@ -196,6 +202,7 @@
           placeholder="Buscar por nome, responsável, solicitante ou próximo passo…">
         <select id="filtro-status"><option value="">Todos os status</option></select>
         <select id="filtro-resp"><option value="">Todos os responsáveis</option></select>
+        <select id="filtro-pilar" hidden><option value="">Todos os pilares</option></select>
         <select id="ordem-cards">
           <option value="prioridade">Ordenar por prioridade</option>
           <option value="data_prevista">Ordenar por prazo</option>
@@ -313,6 +320,11 @@
         <label for="f-solicitante">Solicitante <span class="dica">quem pediu</span></label>
         <input id="f-solicitante" name="solicitante" list="lista-pessoas"
                autocomplete="off" placeholder="Área, liderança ou pessoa">
+      </div>
+
+      <div class="campo largo" id="campo-pilar" hidden>
+        <label for="f-pilar">Pilar <span class="dica">em qual eixo do programa esta frente entra</span></label>
+        <select id="f-pilar" name="pilar"></select>
       </div>
 
       <div class="campo">
@@ -492,6 +504,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="app.js?v=13"></script>
+<script type="module" src="app.js?v=14"></script>
 </body>
 </html>
