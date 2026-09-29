@@ -136,6 +136,20 @@ table{border-collapse:collapse;width:100%}
 .marca-divisor{width:1px;height:20px;background:var(--linha)}
 .marca-txt{font-size:12.5px;font-weight:700;letter-spacing:.02em;white-space:nowrap}
 
+/* o programa em foco: nome fixo para quem enxerga um só, lista para quem
+   enxerga vários */
+.programa-fixo{
+  font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--preto);background:var(--amarelo);padding:3px 10px;border-radius:20px;white-space:nowrap;
+}
+.troca-programa select{
+  font-size:12px;font-weight:700;color:var(--preto);cursor:pointer;
+  background:var(--amarelo-luz);border:1px solid var(--amarelo-esc);
+  padding:4px 10px;border-radius:20px;max-width:200px;
+}
+.troca-programa select:hover{background:var(--amarelo)}
+.troca-programa select:focus{outline:2px solid var(--amarelo-esc);outline-offset:1px}
+
 .nav{display:flex;gap:2px;flex:1 1 auto;overflow-x:auto}
 .nav-item{
   position:relative;padding:20px 14px;font-size:13.5px;font-weight:600;color:var(--cinza);

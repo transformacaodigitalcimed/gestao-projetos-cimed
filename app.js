@@ -10,8 +10,44 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY, PESSOAS, REGRAS, LIMITE_ANEXO_MB } fro
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ------------------------------------------------------------- CONSTANTES
-// A ordem manda no Quadro: o que exige ação primeiro, o que saiu do fluxo no fim.
-const ETAPAS = ['Prioritário', 'Protótipo e ajustes', 'Fila', 'Entregue', 'Congelado / Cancelado'];
+// =====================================================================
+// PROGRAMAS
+// Cada programa é um quadro com etapas próprias. Quem só enxerga um nem
+// vê o alternador: para essa pessoa o sistema é o quadro dela e pronto.
+//
+// ETAPAS deixou de ser fixo — ele é recalculado quando o programa muda.
+// =====================================================================
+let ETAPAS = ['Prioritário', 'Protótipo e ajustes', 'Fila', 'Entregue', 'Congelado / Cancelado'];
+let ETAPA_PARADA = 'Congelado / Cancelado';
+let ETAPA_ENTREGUE = 'Entregue';
+
+// Troca o programa em foco: refaz as etapas e recorta os projetos.
+// Filtrando na origem, todas as telas seguem funcionando sem saber que
+// programas existem.
+function aplicarPrograma(id) {
+  estado.programaAtivo = id || '';
+
+  const visiveis = estado.programas.filter(
+    (pr) => !estado.programasVisiveis || estado.programasVisiveis.includes(pr.id));
+
+  const alvo = visiveis.filter((pr) => !estado.programaAtivo || pr.id === estado.programaAtivo);
+
+  // Em "Todos", o quadro mostra a união das etapas, na ordem dos programas
+  const etapas = [];
+  alvo.forEach((pr) => (pr.etapas || []).forEach((e) => {
+    if (!etapas.some((x) => x.nome === e.nome)) etapas.push(e);
+  }));
+
+  ETAPAS = etapas.map((e) => e.nome);
+  ETAPA_ENTREGUE = etapas.find((e) => e.tipo === 'entregue')?.nome || 'Entregue';
+  ETAPA_PARADA = etapas.find((e) => e.tipo === 'parada')?.nome || 'Congelado / Cancelado';
+
+  const permitidos = new Set(alvo.map((pr) => pr.id));
+  estado.projetos = estado.todosProjetos.filter(
+    (p) => !p.programa_id || permitidos.has(p.programa_id));
+
+  try { localStorage.setItem('programa', estado.programaAtivo); } catch { /* sem problema */ }
+}
 const STATUS = ['Não iniciado', 'Em mapeamento', 'Em construção', 'Em ajustes',
                 'Entregue', 'Congelado', 'Cancelado', 'Descontinuado'];
 
@@ -20,8 +56,6 @@ const STATUS = ['Não iniciado', 'Em mapeamento', 'Em construção', 'Em ajustes
 const CONGELADOS = ['Congelado'];
 const ENCERRADOS = ['Cancelado', 'Descontinuado'];
 const FORA_DO_FLUXO = [...CONGELADOS, ...ENCERRADOS];
-const ETAPA_PARADA = 'Congelado / Cancelado';
-const ETAPA_ENTREGUE = 'Entregue';
 
 const RAG = {
   r: { nome: 'Atrasado',  cls: 'r', cor: 'var(--vermelho)' },
@@ -71,6 +105,10 @@ const estado = {
   anexos: [],
   tarefas: [],
   modelos: [],
+  programas: [],
+  programasVisiveis: null,   // null = enxerga todos
+  programaAtivo: '',         // '' = Todos
+  todosProjetos: [],
   lidoAte: null,
   view: 'visao',
   filtroRag: '',
@@ -301,12 +339,14 @@ function nomeDe(email) {
 // para o sistema não se trancar antes de a atualização do banco rodar.
 async function descobrirPapel(user) {
   const { data, error } = await sb.from('perfis')
-    .select('papel').eq('user_id', user.id).maybeSingle();
+    .select('papel, programas').eq('user_id', user.id).maybeSingle();
 
   if (error) {
     console.warn('Tabela perfis indisponível, usando o config.js:', error.message);
     return PESSOAS[user.email]?.papel || null;
   }
+  // null aqui quer dizer "enxerga todos os programas"
+  estado.programasVisiveis = data?.programas?.length ? data.programas : null;
   return data?.papel || null;
 }
 
@@ -383,6 +423,52 @@ async function iniciar(user) {
   ligarTempoReal();
 }
 
+// Qual programa abrir: o último usado, se ainda for permitido; senão o
+// único que a pessoa enxerga; senão "Todos".
+function escolherPrograma() {
+  const visiveis = estado.programas.filter(
+    (pr) => !estado.programasVisiveis || estado.programasVisiveis.includes(pr.id));
+
+  if (visiveis.length === 1) return visiveis[0].id;
+
+  let guardado = '';
+  try { guardado = localStorage.getItem('programa') || ''; } catch { /* sem problema */ }
+  if (guardado && visiveis.some((pr) => pr.id === guardado)) return guardado;
+  return '';
+}
+
+// O alternador só existe para quem enxerga mais de um programa.
+function montarAlternador() {
+  const visiveis = estado.programas.filter(
+    (pr) => !estado.programasVisiveis || estado.programasVisiveis.includes(pr.id));
+
+  const caixa = $('#troca-programa');
+  const sel = $('#sel-programa');
+  const fixo = $('#programa-fixo');
+
+  if (visiveis.length <= 1) {
+    caixa.hidden = true;
+    fixo.textContent = visiveis[0]?.nome || '';
+    fixo.hidden = !visiveis.length;
+    return;
+  }
+
+  fixo.hidden = true;
+  caixa.hidden = false;
+  sel.innerHTML = '<option value="">Todos os programas</option>' +
+    visiveis.map((pr) => `<option value="${pr.id}">${esc(pr.nome)}</option>`).join('');
+  sel.value = estado.programaAtivo;
+}
+
+$('#sel-programa').addEventListener('change', (e) => {
+  aplicarPrograma(e.target.value);
+  montarSelects();
+  renderTudo();
+  toast(e.target.value
+    ? estado.programas.find((pr) => pr.id === e.target.value)?.nome
+    : 'Todos os programas');
+});
+
 // Esconde as abas que o papel não alcança e trava o que ele não edita.
 function aplicarPapel() {
   const abas = PAPEIS[estado.papel]?.abas || PAPEIS.gestao.abas;
@@ -398,13 +484,14 @@ function aplicarPapel() {
 // DADOS
 // =====================================================================
 async function carregarTudo() {
-  const [proj, com, hist, anx, tar, mod, leit] = await Promise.all([
+  const [proj, com, hist, anx, tar, mod, prg, leit] = await Promise.all([
     sb.from('projetos').select('*').eq('arquivado', false),
     sb.from('comentarios').select('*').order('criado_em', { ascending: false }).limit(200),
     sb.from('historico').select('*').order('criado_em', { ascending: false }).limit(200),
     sb.from('anexos').select('*').order('criado_em', { ascending: false }),
     sb.from('tarefas').select('*').order('ordem', { ascending: true }),
     sb.from('modelos').select('*').order('nome', { ascending: true }),
+    sb.from('programas').select('*').eq('ativo', true).order('ordem', { ascending: true }),
     sb.from('leituras').select('lido_ate').eq('user_id', estado.usuario.id).maybeSingle(),
   ]);
 
@@ -413,7 +500,8 @@ async function carregarTudo() {
   $('#sync').title = falha ? 'Erro de conexão: ' + falha.message : 'Conectado ao banco';
   if (falha) { toast('Erro ao carregar dados: ' + falha.message, true); return; }
 
-  estado.projetos = proj.data || [];
+  estado.todosProjetos = proj.data || [];
+  estado.programas = prg.data || [];
   estado.comentarios = com.data || [];
   estado.historico = hist.data || [];
   // Sem erro fatal: se a tabela ainda não existe, o bloco só não aparece.
@@ -424,6 +512,11 @@ async function carregarTudo() {
 
   if (anx.error) console.warn('Anexos indisponíveis — rode o 03:', anx.error.message);
   if (tar.error) console.warn('Tarefas indisponíveis — rode o 05:', tar.error.message);
+  if (prg.error) console.warn('Programas indisponíveis — rode o 07:', prg.error.message);
+
+  // sem a tabela de programas, o sistema segue como um quadro só
+  if (!estado.programas.length) estado.projetos = estado.todosProjetos;
+  else { montarAlternador(); aplicarPrograma(escolherPrograma()); }
 
   renderTudo();
 }
@@ -475,6 +568,7 @@ function montarListaPessoas() {
 }
 
 function renderTudo() {
+  montarSelects();     // as etapas mudam junto com o programa
   renderVisao();
   renderMinhas();
   renderFiltros();
@@ -1159,7 +1253,8 @@ function renderLeituraCronograma(ps) {
       achados.push({
         tipo: 'folga',
         txt: `Sem nenhuma entrega prevista em <b>${vazios.join(', ')}</b>.`,
-        det: 'Janela livre para puxar algo da Fila ou descongelar um projeto.',
+        // sem citar etapa: o nome muda de um programa para o outro
+        det: 'Janela livre para antecipar algo que está esperando ou descongelar um projeto.',
       });
     }
   }
@@ -1929,6 +2024,9 @@ $('#form-projeto').addEventListener('submit', async (e) => {
     data_prevista: f.elements.data_prevista.value || null,
     data_entrega: f.elements.data_entrega.value || null,
     prioridade: num(f.elements.prioridade.value) || 3,
+    programa_id: estado.programaAtivo
+      || estado.programas.find((pr) => pr.nome === 'Programa de IA')?.id
+      || estado.programas[0]?.id || null,
     horas_mes: num(f.elements.horas_mes.value),
     custo_ano: num(f.elements.custo_ano.value),
     progresso: num(f.elements.progresso.value) || 0,
@@ -2042,6 +2140,7 @@ $('#btn-excel').addEventListener('click', async () => {
       const r = calcRag(p);
       const ck = compChave(p.compliance_necessario);
       return {
+        'Programa': estado.programas.find((pr) => pr.id === p.programa_id)?.nome || '',
         'Código': p.codigo || '',
         'Projeto': p.nome,
         'Etapa': p.etapa,

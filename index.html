@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gestão de Projetos · CIMED</title>
 <meta name="description" content="Painel de acompanhamento dos projetos de transformação digital do RH CIMED.">
-<link rel="icon" type="image/svg+xml" href="favicon.svg?v=12">
+<link rel="icon" type="image/svg+xml" href="favicon.svg?v=13">
 
 <!-- instalável no celular: abre em tela cheia, sem barra do navegador -->
-<link rel="manifest" href="manifest.json?v=12">
+<link rel="manifest" href="manifest.json?v=13">
 <meta name="theme-color" content="#FFD200">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -20,7 +20,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- O ?v= força o navegador a buscar a versão nova em vez da guardada em cache.
      SEMPRE que alterar style.css ou app.js, some 1 nos dois números abaixo. -->
-<link rel="stylesheet" href="style.css?v=12">
+<link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
 
@@ -80,6 +80,11 @@
         <svg class="marca-logo"><use href="#logo-cimed"></use></svg>
         <span class="marca-divisor"></span>
         <span class="marca-txt">Gestão de Projetos</span>
+        <!-- quem enxerga um programa só vê o nome; quem enxerga vários, a lista -->
+        <span class="programa-fixo" id="programa-fixo" hidden></span>
+        <span class="troca-programa" id="troca-programa" hidden>
+          <select id="sel-programa" title="Trocar de programa"></select>
+        </span>
       </div>
 
       <nav class="nav" id="nav">
@@ -487,6 +492,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="app.js?v=12"></script>
+<script type="module" src="app.js?v=13"></script>
 </body>
 </html>

@@ -9,18 +9,18 @@
 // vez de mostrar um número velho como se fosse o de agora.
 // =====================================================================
 
-const VERSAO = 'cimed-projetos-v12';
+const VERSAO = 'cimed-projetos-v13';
 
 const CASCA = [
   './',
   './index.html',
-  './style.css?v=12',
-  './app.js?v=12',
+  './style.css?v=13',
+  './app.js?v=13',
   './config.js',
   './favicon.svg',
   './icone-192.png',
   './icone-512.png',
-  './manifest.json?v=12',
+  './manifest.json?v=13',
 ];
 
 self.addEventListener('install', (e) => {
