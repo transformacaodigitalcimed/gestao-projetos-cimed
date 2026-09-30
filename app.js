@@ -90,7 +90,7 @@ const BUCKET = 'anexos-projetos';
 //    dar clareza de papel a colegas, não para conter quem quer burlar.
 // =====================================================================
 const PAPEIS = {
-  gestao:    { abas: ['visao', 'minhas', 'quadro', 'cronograma', 'notificacoes'], editaProjeto: true },
+  gestao:    { abas: ['visao', 'quadro', 'cronograma', 'notificacoes'], editaProjeto: true },
   controles: { abas: ['quadro'],                                       editaProjeto: false },
 };
 
@@ -558,13 +558,17 @@ $('#nav').addEventListener('click', (e) => {
 // o sino ficou no canto, ao lado do nome, mas navega como as abas
 $('#sino').addEventListener('click', () => irPara('notificacoes'));
 
+$('#parados').addEventListener('toggle', (e) => {
+  const d = e.target.closest('details');
+  if (d) estado.abrirParados = d.open;
+}, true);
+
 function irPara(view) {
   estado.view = view;
   $$('.nav-item').forEach((b) => b.classList.toggle('ativo', b.dataset.view === view));
   $('#sino').classList.toggle('ativo', view === 'notificacoes');
   $$('.view').forEach((s) => s.classList.toggle('ativa', s.id === 'view-' + view));
   if (view === 'cronograma') renderGantt();
-  if (view === 'minhas') renderMinhas();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -582,7 +586,6 @@ function montarListaPessoas() {
 function renderTudo() {
   montarSelects();     // as etapas mudam junto com o programa
   renderVisao();
-  renderMinhas();
   renderFiltros();
   montarListaPessoas();
   renderNotificacoes();
@@ -614,9 +617,8 @@ function renderVisao() {
   $('#kpis').innerHTML = [
     ['destaque', 'Em andamento', ativos.length, 'de ' + ps.length + ' no portfólio'],
     ['r', 'Atrasados', cont.r, 'prazo vencido'],
-    ['a', 'Em atenção', cont.a, 'vencem em até ' + REGRAS.diasAtencao + ' dias'],
-    ['v', 'No prazo', cont.v, 'sem risco de data'],
     ['c', 'Entregues', entregues.length, 'desde o início do programa'],
+    ['z', 'Congelados e cancelados', parados.length, 'fora do fluxo'],
   ].map(([cls, rot, num, pe]) => `
     <div class="kpi ${cls}">
       <div class="kpi-rot">${esc(rot)}</div>
@@ -820,7 +822,18 @@ function renderQuadro() {
 
   const lista = ordenarCards(projetosFiltrados());
 
-  $('#kanban').innerHTML = ETAPAS.map((etapa) => {
+  // A coluna de parados sai da fileira: ela é arquivo, não trabalho em
+  // curso, e estava comendo um quinto da largura das colunas ativas.
+  const emFluxo = ETAPAS.filter((et) => et !== ETAPA_PARADA);
+
+  // Em "Todos os programas" as etapas dos dois quadros se somam. Coluna
+  // vazia de outro programa só ocupa espaço, então some.
+  const varios = !estado.programaAtivo && estado.programas.length > 1;
+  const visiveis = varios
+    ? emFluxo.filter((et) => lista.some((p) => p.etapa === et))
+    : emFluxo;
+
+  const coluna = (etapa) => {
     const ps = lista.filter((p) => p.etapa === etapa);
     const horas = ps.reduce((s, p) => s + Number(p.horas_mes || 0), 0);
     return `
@@ -838,7 +851,27 @@ function renderQuadro() {
           ${ps.map(cardKanban).join('') || '<p class="kvazio">Solte um projeto aqui</p>'}
         </div>
       </section>`;
-  }).join('');
+  };
+
+  $('#kanban').style.gridTemplateColumns =
+    `repeat(${visiveis.length}, minmax(248px, 1fr))`;
+  $('#kanban').innerHTML = visiveis.map(coluna).join('');
+
+  // a faixa de parados, recolhida, embaixo do quadro
+  const parados = lista.filter((p) => p.etapa === ETAPA_PARADA);
+  const faixa = $('#parados');
+  faixa.hidden = !ETAPAS.includes(ETAPA_PARADA);
+  faixa.innerHTML = `
+    <details class="kparados" data-etapa="${esc(ETAPA_PARADA)}" ${estado.abrirParados ? 'open' : ''}>
+      <summary>
+        <span class="kp-titulo">${esc(ETAPA_PARADA)}</span>
+        <span class="cont">${parados.length}</span>
+        <span class="kp-dica">${parados.length ? 'arraste para cá para congelar' : 'nada parado'}</span>
+      </summary>
+      <div class="kp-corpo">
+        ${parados.map(cardKanban).join('') || '<p class="kvazio">Solte um projeto aqui</p>'}
+      </div>
+    </details>`;
 
   $('#contagem').textContent = lista.length === estado.projetos.length
     ? `${estado.projetos.length} projetos no portfólio`
@@ -956,7 +989,7 @@ function ligarArrastar(kb) {
       document.removeEventListener('pointercancel', limpar);
       card.classList.remove('arrastando');
       document.body.classList.remove('arrastando-algo');
-      $$('.kcol').forEach((c) => c.classList.remove('alvo'));
+      $$('.kcol, .kparados').forEach((c) => c.classList.remove('alvo'));
       if (clone) clone.remove();
       clone = null;
     };
@@ -979,7 +1012,7 @@ function ligarArrastar(kb) {
       if (clone) clone.style.visibility = 'hidden';
       const el = document.elementFromPoint(x, y);
       if (clone) clone.style.visibility = '';
-      return el && el.closest('.kcol');
+      return el && el.closest('.kcol, .kparados');
     };
 
     const mover = (ev) => {
@@ -991,7 +1024,7 @@ function ligarArrastar(kb) {
       clone.style.left = `${ev.clientX - dx}px`;
       clone.style.top = `${ev.clientY - dy}px`;
       const col = colunaSob(ev.clientX, ev.clientY);
-      $$('.kcol').forEach((c) => c.classList.toggle('alvo', c === col));
+      $$('.kcol, .kparados').forEach((c) => c.classList.toggle('alvo', c === col));
     };
 
     const largar = (ev) => {
@@ -1018,7 +1051,8 @@ function ligarArrastar(kb) {
 }
 
 function ligarQuadro() {
-  const kb = $('#kanban');
+  // a faixa de parados vive fora do #kanban, então ouvimos a tela toda
+  const kb = $('#view-quadro');
   ligarArrastar(kb);
 
   // status e compliance mudam direto no card
@@ -1671,144 +1705,33 @@ async function enfileirarMencoes(texto, projetoId, origem) {
   if (error) console.warn('Fila de notificações indisponível:', error.message);
 }
 
-// =====================================================================
-// MINHAS TAREFAS
-// =====================================================================
-function renderMinhas() {
-  const todas = $('#ver-todas-tarefas').checked;
-  const meu = estado.nome.toLowerCase();
-
-  const ativas = estado.tarefas.filter((t) => {
-    if (t.feita) return false;
-    const proj = estado.projetos.find((p) => p.id === t.projeto_id);
-    if (!proj || FORA_DO_FLUXO.includes(proj.status)) return false;
-    return todas || (t.responsavel || '').toLowerCase() === meu;
-  });
-
-  // projetos sob minha responsabilidade que ainda não foram quebrados em tarefas
-  const semTarefa = estado.projetos.filter((p) =>
-    !FORA_DO_FLUXO.includes(p.status) && p.status !== 'Entregue'
-    && !estado.tarefas.some((t) => t.projeto_id === p.id)
-    && (todas || (p.responsavel || '').toLowerCase() === meu));
-
-  const dias = (d) => (d ? Math.round((paraData(d) - HOJE) / 86400000) : null);
-
-  const baldes = [
-    { k: 'atrasada', rot: 'Atrasadas', teste: (d) => d !== null && d < 0 },
-    { k: 'hoje', rot: 'Para hoje', teste: (d) => d === 0 },
-    { k: 'semana', rot: 'Próximos 7 dias', teste: (d) => d > 0 && d <= 7 },
-    { k: 'depois', rot: 'Mais adiante', teste: (d) => d > 7 },
-    { k: 'sem', rot: 'Sem prazo', teste: (d) => d === null },
-  ];
-
-  const atrasadas = ativas.filter((t) => dias(t.prazo) !== null && dias(t.prazo) < 0).length;
-  const paraHoje = ativas.filter((t) => dias(t.prazo) === 0).length;
-
-  const n = ativas.length;
-  $('#minhas-sub').textContent = (todas
-    ? `${n} tarefa${n === 1 ? '' : 's'} aberta${n === 1 ? '' : 's'} no time`
-    : `${n} tarefa${n === 1 ? '' : 's'} sua${n === 1 ? '' : 's'} em aberto`)
-    + (atrasadas ? ` · ${atrasadas} atrasada${atrasadas > 1 ? 's' : ''}` : '')
-    + (paraHoje ? ` · ${paraHoje} para hoje` : '');
-
-  const badge = $('#badge-minhas');
-  const meuTotal = estado.tarefas.filter((t) =>
-    !t.feita && (t.responsavel || '').toLowerCase() === meu
-    && dias(t.prazo) !== null && dias(t.prazo) <= 0).length;
-  badge.textContent = meuTotal;
-  badge.hidden = meuTotal === 0;
-
-  const itemTarefa = (t) => {
-    const proj = estado.projetos.find((p) => p.id === t.projeto_id);
-    const pai = t.depende_de ? estado.tarefas.find((x) => x.id === t.depende_de) : null;
-    const travada = pai && !pai.feita;
-    const d = dias(t.prazo);
-    return `
-      <li class="${travada ? 'travada' : ''}">
-        <input type="checkbox" class="tarefa-check" data-minha="${t.id}"
-               ${travada || !podeEditar() ? 'disabled' : ''}
-               title="${travada ? 'Depende de: ' + esc(pai.titulo) : 'Marcar como concluída'}">
-        <div class="tarefa-corpo">
-          <span class="tarefa-titulo">${textoComMencoes(t.titulo)}</span>
-          <span class="tarefa-meta">
-            <b data-abrir="${t.projeto_id}">${esc(proj ? proj.nome : '—')}</b>
-            ${t.prazo ? `<span class="${d < 0 ? 'venceu' : ''}">${fmtData(t.prazo)}</span>` : '<i>sem prazo</i>'}
-            ${todas && t.responsavel ? `<span>${esc(t.responsavel)}</span>` : ''}
-            ${travada ? `<span class="tarefa-dep">espera: ${esc(pai.titulo)}</span>` : ''}
-          </span>
-        </div>
-      </li>`;
-  };
-
-  let html = baldes.map((b) => {
-    const itens = ativas.filter((t) => b.teste(dias(t.prazo)))
-      .sort((x, y) => (x.prazo || '9999').localeCompare(y.prazo || '9999'));
-    if (!itens.length) return '';
-    return `
-      <div class="painel bloco-minhas ${b.k}">
-        <h3>${b.rot} <span class="cont">${itens.length}</span></h3>
-        <ul class="lista-tarefas">${itens.map(itemTarefa).join('')}</ul>
-      </div>`;
-  }).join('');
-
-  if (semTarefa.length) {
-    html += `
-      <div class="painel bloco-minhas sem">
-        <h3>Projetos sem tarefas <span class="cont">${semTarefa.length}</span></h3>
-        <p class="dica-bloco">Ainda não foram quebrados em passos. Abra e use um modelo para começar.</p>
-        <ul class="lista-simples">
-          ${semTarefa.map((p) => `
-            <li data-abrir="${p.id}">
-              <b>${esc(p.nome)}</b>
-              <span>${esc(p.status)} · ${fmtData(p.data_prevista)}</span>
-            </li>`).join('')}
-        </ul>
-      </div>`;
-  }
-
-  $('#minhas-listas').innerHTML = html
-    || '<div class="painel"><p class="vazio">Nada em aberto no seu nome. Bom sinal.</p></div>';
-}
-
-$('#ver-todas-tarefas').addEventListener('change', renderMinhas);
-
-$('#minhas-listas').addEventListener('change', async (e) => {
-  const chk = e.target.closest('[data-minha]');
-  if (!chk) return;
-  const r = await sb.from('tarefas')
-    .update({ feita: true, feita_por: estado.nome }).eq('id', chk.dataset.minha);
-  if (r.error) {
-    chk.checked = false;
-    return toast(r.error.message.replace('Conclua antes a tarefa', 'Primeiro conclua'), true);
-  }
-  await carregarTudo();
-  toast('Tarefa concluída');
-});
-
 // ------------------------------- CALENDÁRIO (.ics para Outlook/Google)
 $('#btn-ics').addEventListener('click', () => {
-  const todas = $('#ver-todas-tarefas').checked;
-  const meu = estado.nome.toLowerCase();
-
+  // Leva o que está na tela: mesmo filtro do Quadro, mesmo programa.
+  const visiveis = projetosFiltrados();
+  const ids = new Set(visiveis.map((p) => p.id));
   const eventos = [];
-  estado.tarefas.filter((t) => !t.feita && t.prazo
-    && (todas || (t.responsavel || '').toLowerCase() === meu))
+
+  estado.tarefas
+    .filter((t) => !t.feita && t.prazo && ids.has(t.projeto_id))
     .forEach((t) => {
-      const proj = estado.projetos.find((p) => p.id === t.projeto_id);
+      const proj = visiveis.find((p) => p.id === t.projeto_id);
       eventos.push({ id: t.id, data: t.prazo, titulo: t.titulo, onde: proj?.nome || '' });
     });
 
-  estado.projetos.filter((p) => p.data_prevista && p.status !== 'Entregue'
-    && !FORA_DO_FLUXO.includes(p.status)
-    && (todas || (p.responsavel || '').toLowerCase() === meu))
+  visiveis
+    .filter((p) => p.data_prevista && p.status !== 'Entregue' && !FORA_DO_FLUXO.includes(p.status))
     .forEach((p) => {
-      eventos.push({ id: p.id, data: p.data_prevista, titulo: `Entrega: ${p.nome}`, onde: p.proximo_passo || '' });
+      eventos.push({ id: p.id, data: p.data_prevista, titulo: `Entrega: ${p.nome}`,
+                     onde: p.proximo_passo || '' });
     });
 
   if (!eventos.length) return toast('Nada com data para exportar.', true);
 
-  const limpo = (s) => String(s || '').replace(/[\\;,]/g, ' ').replace(/\r?\n/g, ' ').slice(0, 180);
-  const semTraco = (d) => d.replace(/-/g, '');
+  const limpo = (s) => String(s || '')
+    .replace(new RegExp('[\\\\;,]', 'g'), ' ')
+    .replace(new RegExp('[\\r\\n]+', 'g'), ' ')
+    .slice(0, 180);
   const agora = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
 
   const ics = [
@@ -1822,7 +1745,7 @@ $('#btn-ics').addEventListener('click', () => {
         'BEGIN:VEVENT',
         `UID:${ev.id}@projetos.cimed`,
         `DTSTAMP:${agora}`,
-        `DTSTART;VALUE=DATE:${semTraco(ev.data)}`,
+        `DTSTART;VALUE=DATE:${ev.data.replace(/-/g, '')}`,
         `DTEND;VALUE=DATE:${fimTxt}`,
         `SUMMARY:${limpo(ev.titulo)}`,
         `DESCRIPTION:${limpo(ev.onde)}`,
@@ -1832,7 +1755,7 @@ $('#btn-ics').addEventListener('click', () => {
       ];
     }),
     'END:VCALENDAR',
-  ].join('\r\n');
+  ].join(String.fromCharCode(13, 10));
 
   const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
   const a = document.createElement('a');
@@ -1842,6 +1765,7 @@ $('#btn-ics').addEventListener('click', () => {
   URL.revokeObjectURL(url);
   toast(`${eventos.length} prazos exportados — abra o arquivo no Outlook`);
 });
+
 
 // =====================================================================
 // SUBTAREFAS

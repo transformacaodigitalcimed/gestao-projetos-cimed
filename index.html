@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gestão de Projetos · CIMED</title>
 <meta name="description" content="Painel de acompanhamento dos projetos de transformação digital do RH CIMED.">
-<link rel="icon" type="image/svg+xml" href="favicon.svg?v=15">
+<link rel="icon" type="image/svg+xml" href="favicon.svg?v=17">
 
 <!-- instalável no celular: abre em tela cheia, sem barra do navegador -->
-<link rel="manifest" href="manifest.json?v=15">
+<link rel="manifest" href="manifest.json?v=17">
 <meta name="theme-color" content="#FFD200">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -20,7 +20,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- O ?v= força o navegador a buscar a versão nova em vez da guardada em cache.
      SEMPRE que alterar style.css ou app.js, some 1 nos dois números abaixo. -->
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=17">
 </head>
 <body>
 
@@ -89,10 +89,6 @@
 
       <nav class="nav" id="nav">
         <button class="nav-item ativo" data-view="visao">Visão geral</button>
-        <button class="nav-item" data-view="minhas">
-          Minhas tarefas
-          <span class="badge cinza" id="badge-minhas" hidden>0</span>
-        </button>
         <button class="nav-item" data-view="quadro">Quadro</button>
         <button class="nav-item" data-view="cronograma">Cronograma</button>
       </nav>
@@ -166,24 +162,6 @@
 
     </section>
 
-    <!-- --------------------------------------------- MINHAS TAREFAS -->
-    <section class="view" id="view-minhas">
-      <div class="view-head">
-        <div>
-          <h2>Minhas tarefas</h2>
-          <p class="view-sub" id="minhas-sub"></p>
-        </div>
-        <div class="acoes-quadro">
-          <label class="alternar">
-            <input type="checkbox" id="ver-todas-tarefas">
-            <span>Ver de todo mundo</span>
-          </label>
-          <button class="btn-texto" id="btn-ics">Baixar para o calendário</button>
-        </div>
-      </div>
-      <div id="minhas-listas"></div>
-    </section>
-
     <!-- ----------------------------------------- QUADRO (KANBAN) -->
     <section class="view" id="view-quadro">
       <div class="view-head">
@@ -192,6 +170,7 @@
           <p class="view-sub">Arraste um projeto para mudar de etapa. Status e progresso você muda direto no card.</p>
         </div>
         <div class="acoes-quadro">
+          <button class="btn-texto" id="btn-ics" title="Baixar os prazos para o Outlook">Calendário</button>
           <button class="btn-texto" id="btn-excel">Exportar Excel</button>
           <button class="btn-primario pequeno" id="btn-novo">+ Novo projeto</button>
         </div>
@@ -211,6 +190,7 @@
       </div>
 
       <div class="kanban" id="kanban"></div>
+      <div id="parados" hidden></div>
       <p class="contagem" id="contagem"></p>
     </section>
 
@@ -500,6 +480,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="app.js?v=15"></script>
+<script type="module" src="app.js?v=17"></script>
 </body>
 </html>
