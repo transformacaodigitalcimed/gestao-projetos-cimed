@@ -481,6 +481,7 @@ $('#sel-programa').addEventListener('change', (e) => {
 function aplicarPapel() {
   const abas = PAPEIS[estado.papel]?.abas || PAPEIS.gestao.abas;
   $$('.nav-item').forEach((b) => { b.hidden = !abas.includes(b.dataset.view); });
+  $('#sino').hidden = !abas.includes('notificacoes');
   if (!abas.includes(estado.view)) irPara(abas[0]);
 
   const dono = podeEditar();
@@ -551,13 +552,16 @@ async function salvarProjeto(id, campos) {
 // =====================================================================
 $('#nav').addEventListener('click', (e) => {
   const b = e.target.closest('.nav-item');
-  if (!b) return;
-  irPara(b.dataset.view);
+  if (b) irPara(b.dataset.view);
 });
+
+// o sino ficou no canto, ao lado do nome, mas navega como as abas
+$('#sino').addEventListener('click', () => irPara('notificacoes'));
 
 function irPara(view) {
   estado.view = view;
   $$('.nav-item').forEach((b) => b.classList.toggle('ativo', b.dataset.view === view));
+  $('#sino').classList.toggle('ativo', view === 'notificacoes');
   $$('.view').forEach((s) => s.classList.toggle('ativa', s.id === 'view-' + view));
   if (view === 'cronograma') renderGantt();
   if (view === 'minhas') renderMinhas();
@@ -814,11 +818,6 @@ function renderQuadro() {
   const cont = Object.fromEntries(ORDEM_RAG.map((k) => [k, 0]));
   estado.projetos.forEach((p) => cont[calcRag(p).k]++);
 
-  $('#filtros-rag').innerHTML =
-    `<button class="chip ${estado.filtroRag === '' ? 'ativo' : ''}" data-rag="">Todos</button>` +
-    ORDEM_RAG.filter((k) => cont[k]).map((k) =>
-      `<button class="chip ${estado.filtroRag === k ? 'ativo' : ''}" data-rag="${k}">${RAG[k].nome} (${cont[k]})</button>`).join('');
-
   const lista = ordenarCards(projetosFiltrados());
 
   $('#kanban').innerHTML = ETAPAS.map((etapa) => {
@@ -865,11 +864,13 @@ function cardKanban(p) {
   // O card inteiro abre a ficha. Os controles internos param o clique
   // antes de chegar aqui, então mexer no status não abre nada.
   return `
-    <article class="kcard ${RAG[r.k].cls}${estado.destacar === p.id ? ' novinho' : ''}"
-             data-id="${p.id}" data-abrir="${p.id}" title="Abrir a ficha completa">
+    <article class="kcard ${RAG[r.k].cls}${estado.destacar === p.id ? ' novinho' : ''}${pl ? ' com-pilar' : ''}"
+             ${pl ? `style="--pcor:${pl.cor}" title="Pilar: ${esc(pl.nome)}"` : ''}
+             data-id="${p.id}" data-abrir="${p.id}">
       <div class="kcard-topo">
-        ${pl ? `<span class="kpilar" style="--pcor:${pl.cor}" title="${esc(pl.nome)}">${esc(pl.curto || pl.nome)}</span>` : ''}
-        <span class="pill ${RAG[r.k].cls}" title="${esc(r.motivo)}">${RAG[r.k].nome}</span>
+        ${['v', 'c'].includes(r.k)
+          ? `<span class="kquieto">${esc(r.motivo)}</span>`
+          : `<span class="pill ${RAG[r.k].cls}" title="${esc(r.motivo)}">${RAG[r.k].nome}</span>`}
         ${dono && ck === 'sim' ? '<span class="kcomp sim">Compliance</span>' : ''}
       </div>
       <h5>${esc(p.nome)}</h5>
@@ -1352,15 +1353,14 @@ function renderLeituraCronograma(ps) {
 // =====================================================================
 function projetosFiltrados() {
   const busca = $('#busca').value.trim().toLowerCase();
-  const fS = $('#filtro-status').value;
-  const fR = $('#filtro-resp').value;
-  const fP = $('#filtro-pilar').value;
+  const [tipo, valor] = ($('#filtro').value || '').split('::');
 
   return estado.projetos.filter((p) => {
-    if (fS && p.status !== fS) return false;
-    if (fR && p.responsavel !== fR) return false;
-    if (fP && (p.pilar || '') !== fP) return false;
-    if (estado.filtroRag && calcRag(p).k !== estado.filtroRag) return false;
+    if (tipo === 'rag' && calcRag(p).k !== valor) return false;
+    if (tipo === 'pilar' && (p.pilar || '') !== valor) return false;
+    if (tipo === 'resp' && (p.responsavel || '') !== valor) return false;
+    if (tipo === 'status' && p.status !== valor) return false;
+
     if (busca) {
       const alvo = [p.nome, p.codigo, p.responsavel, p.solicitante,
                     p.proximo_passo, p.descricao].join(' ').toLowerCase();
@@ -1378,44 +1378,43 @@ function ordenarCards(lista) {
     }
     if (campo === 'nome') return (a.nome || '').localeCompare(b.nome || '', 'pt-BR');
     if (campo === 'data_prevista') {
-      const x = a.data_prevista || '9999-12-31';
-      const y = b.data_prevista || '9999-12-31';
-      return x.localeCompare(y);
+      return (a.data_prevista || '9999-12-31').localeCompare(b.data_prevista || '9999-12-31');
     }
-    // horas e progresso: do maior para o menor
     return (Number(b[campo]) || 0) - (Number(a[campo]) || 0);
   });
 }
 
-// Os selects só são reconstruídos quando os dados mudam — nunca durante a
-// digitação, para não fechar o dropdown nem perder o foco.
+// Uma lista só, agrupada. Antes eram quatro listas, sete pastilhas e um
+// botão de limpar — doze controles para filtrar vinte e dois projetos.
 function renderFiltros() {
-  const opcoes = (sel, vals, rot) => {
-    const atual = sel.value;
-    sel.innerHTML = `<option value="">${rot}</option>` +
-      vals.map((v) => `<option${v === atual ? ' selected' : ''}>${esc(v)}</option>`).join('');
-  };
-  opcoes($('#filtro-status'), STATUS, 'Todos os status');
-  opcoes($('#filtro-resp'),
-    [...new Set(estado.projetos.map((p) => p.responsavel).filter(Boolean))]
-      .sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    'Todos os responsáveis');
+  const atual = $('#filtro').value;
+  const conta = (teste) => estado.projetos.filter(teste).length;
 
-  // o filtro de pilar só existe se o programa em foco tiver pilares
-  $('#filtro-pilar').hidden = !PILARES.length;
-  opcoes($('#filtro-pilar'), PILARES.map((pl) => pl.nome), 'Todos os pilares');
+  const grupo = (rotulo, itens) => {
+    const vivos = itens.filter(([, , n]) => n > 0);
+    if (!vivos.length) return '';
+    return `<optgroup label="${rotulo}">` +
+      vivos.map(([v, rot, n]) => `<option value="${v}">${esc(rot)} (${n})</option>`).join('') +
+      '</optgroup>';
+  };
+
+  $('#filtro').innerHTML =
+    '<option value="">Todos os projetos</option>' +
+    grupo('Situação', ORDEM_RAG.map((k) => [`rag::${k}`, RAG[k].nome, conta((p) => calcRag(p).k === k)])) +
+    grupo('Pilar', PILARES.map((pl) => [`pilar::${pl.nome}`, pl.curto || pl.nome,
+      conta((p) => p.pilar === pl.nome)])) +
+    grupo('Responsável', [...new Set(estado.projetos.map((p) => p.responsavel).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+      .map((r) => [`resp::${r}`, r, conta((p) => p.responsavel === r)])) +
+    grupo('Status', STATUS.map((s) => [`status::${s}`, s, conta((p) => p.status === s)]));
+
+  $('#filtro').value = atual;
+  if (!$('#filtro').value) $('#filtro').value = '';
 }
 
-['#busca', '#filtro-status', '#filtro-resp', '#filtro-pilar', '#ordem-cards'].forEach((s) =>
+['#busca', '#filtro', '#ordem-cards'].forEach((s) =>
   $(s).addEventListener('input', renderQuadro));
 
-$('#limpar-filtros').addEventListener('click', () => {
-  $('#busca').value = '';
-  ['#filtro-status', '#filtro-resp', '#filtro-pilar'].forEach((s) => { $(s).value = ''; });
-  $('#ordem-cards').value = 'prioridade';
-  estado.filtroRag = '';
-  renderQuadro();
-});
 
 // =====================================================================
 // NOTIFICAÇÕES
@@ -2454,8 +2453,6 @@ document.addEventListener('click', (e) => {
   const alvo = e.target.closest('[data-abrir]');
   if (alvo) { abrirProjeto(alvo.dataset.abrir); return; }
 
-  const chip = e.target.closest('[data-rag]');
-  if (chip) { estado.filtroRag = chip.dataset.rag; renderVisao(); }
 });
 
 document.addEventListener('keydown', (e) => {

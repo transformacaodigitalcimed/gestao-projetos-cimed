@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gestão de Projetos · CIMED</title>
 <meta name="description" content="Painel de acompanhamento dos projetos de transformação digital do RH CIMED.">
-<link rel="icon" type="image/svg+xml" href="favicon.svg?v=14">
+<link rel="icon" type="image/svg+xml" href="favicon.svg?v=15">
 
 <!-- instalável no celular: abre em tela cheia, sem barra do navegador -->
-<link rel="manifest" href="manifest.json?v=14">
+<link rel="manifest" href="manifest.json?v=15">
 <meta name="theme-color" content="#FFD200">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -20,7 +20,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- O ?v= força o navegador a buscar a versão nova em vez da guardada em cache.
      SEMPRE que alterar style.css ou app.js, some 1 nos dois números abaixo. -->
-<link rel="stylesheet" href="style.css?v=14">
+<link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
 
@@ -95,13 +95,13 @@
         </button>
         <button class="nav-item" data-view="quadro">Quadro</button>
         <button class="nav-item" data-view="cronograma">Cronograma</button>
-        <button class="nav-item" data-view="notificacoes">
-          Notificações
-          <span class="badge" id="badge-notif" hidden>0</span>
-        </button>
       </nav>
 
       <div class="topo-dir">
+        <button class="sino" id="sino" data-view="notificacoes" title="Notificações" aria-label="Notificações">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+          <span class="badge" id="badge-notif" hidden>0</span>
+        </button>
         <span class="sync" id="sync" title="Conexão com o banco"></span>
         <span class="usuario" id="usuario"></span>
         <button class="btn-texto" id="btn-sair">Sair</button>
@@ -200,20 +200,16 @@
       <div class="barra-filtros">
         <input type="search" id="busca"
           placeholder="Buscar por nome, responsável, solicitante ou próximo passo…">
-        <select id="filtro-status"><option value="">Todos os status</option></select>
-        <select id="filtro-resp"><option value="">Todos os responsáveis</option></select>
-        <select id="filtro-pilar" hidden><option value="">Todos os pilares</option></select>
-        <select id="ordem-cards">
-          <option value="prioridade">Ordenar por prioridade</option>
-          <option value="data_prevista">Ordenar por prazo</option>
-          <option value="horas_mes">Ordenar por horas/mês</option>
-          <option value="progresso">Ordenar por progresso</option>
-          <option value="nome">Ordenar por nome</option>
+        <select id="filtro" title="Filtrar o quadro"></select>
+        <select id="ordem-cards" title="Ordenar os cards">
+          <option value="prioridade">Prioridade</option>
+          <option value="data_prevista">Prazo</option>
+          <option value="horas_mes">Horas/mês</option>
+          <option value="progresso">Progresso</option>
+          <option value="nome">Nome</option>
         </select>
-        <button class="btn-texto" id="limpar-filtros">Limpar</button>
       </div>
 
-      <div class="filtros-rapidos" id="filtros-rag"></div>
       <div class="kanban" id="kanban"></div>
       <p class="contagem" id="contagem"></p>
     </section>
@@ -504,6 +500,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="app.js?v=14"></script>
+<script type="module" src="app.js?v=15"></script>
 </body>
 </html>

@@ -404,8 +404,9 @@ table{border-collapse:collapse;width:100%}
 .barra-filtros input[type=search],.barra-filtros select{
   padding:9px 12px;border:1px solid var(--linha);border-radius:var(--raio);background:var(--branco);
 }
-.barra-filtros input[type=search]{flex:1 1 280px;min-width:200px}
-.barra-filtros select{min-width:150px}
+.barra-filtros input[type=search]{flex:1 1 300px;min-width:200px}
+.barra-filtros select{min-width:170px;flex:0 1 auto}
+.barra-filtros #ordem-cards{min-width:130px;color:var(--cinza)}
 .barra-filtros input:focus,.barra-filtros select:focus{outline:2px solid var(--amarelo);outline-offset:-1px}
 
 /* =========================================================== TABELA */
@@ -832,6 +833,51 @@ body.arrastando-algo{cursor:grabbing;user-select:none}
   .kcard{cursor:default}
   .view-sub{display:none}
 }
+
+/* ============================ CARD MAIS QUIETO (proposta B) */
+/* "No prazo" e "Entregue" nao desenham pastilha: viram texto cinza.
+   Assim o que sobra colorido na tela e so o que precisa de voce. */
+.kquieto{font-size:11px;color:var(--cinza-claro);font-weight:500}
+
+/* o pilar e uma faixa fina na borda direita, sem texto */
+.kcard.com-pilar::after{
+  content:"";position:absolute;right:0;top:0;bottom:0;width:3px;background:var(--pcor);opacity:.55;
+}
+.kcard.com-pilar:hover::after{opacity:1}
+
+/* Os controles ficam apagados e ganham contorno quando o mouse chega.
+   Nao escondemos: esconder mudaria a altura do card e faria a coluna
+   inteira pular a cada passagem do mouse. */
+.kcard-status{
+  border-color:transparent;background:transparent;color:var(--cinza);
+  transition:border-color .13s,background .13s,color .13s;
+}
+.kcard:hover .kcard-status{border-color:var(--linha);background:var(--fundo);color:var(--preto)}
+
+.kbtn{opacity:0;transition:opacity .13s}
+.kcard:hover .kbtn{opacity:1}
+
+.kcard-passo{background:transparent;padding:7px 0 0;color:var(--cinza)}
+.kcard:hover .kcard-passo{color:var(--grafite)}
+
+/* no toque nao existe passar o mouse: tudo sempre visivel */
+@media (hover:none){
+  .kcard-status{border-color:var(--linha);background:var(--fundo);color:var(--preto)}
+  .kbtn{opacity:1}
+  .kcard-passo{color:var(--grafite)}
+}
+
+/* ==================================================== SININHO */
+.sino{
+  position:relative;width:34px;height:34px;border-radius:9px;color:var(--grafite);
+  display:flex;align-items:center;justify-content:center;flex:0 0 auto;
+}
+.sino svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round}
+.sino:hover{background:var(--neutro-luz);color:var(--preto)}
+.sino.ativo{background:var(--amarelo);color:var(--preto)}
+.sino .badge{position:absolute;top:1px;right:0;margin:0;min-width:16px;
+  font-size:9.5px;line-height:14px;padding:0 4px}
 
 /* ============================================================ TOAST */
 .toast{
