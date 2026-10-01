@@ -223,15 +223,18 @@ const valorAno   = (p) => porHoras(p) + custoDireto(p);
 // Regra: o mês da entrega conta inteiro (entregou em outubro, conta
 // out/nov/dez = 3). `projetar` usa a data prevista de quem ainda não
 // entregou, para responder "e se tudo sair no prazo?".
-function mesesNoAno(p, ano, projetar) {
-  if (FORA_DO_FLUXO.includes(p.status)) return 0;
-  const iso = p.data_entrega || (projetar ? p.data_prevista : null);
+function mesesDeData(iso, ano) {
   if (!iso) return 0;
   const d = paraData(iso);
   if (!d || Number.isNaN(d.getTime())) return 0;
   if (d.getFullYear() > ano) return 0;
   if (d.getFullYear() < ano) return 12;
   return 12 - d.getMonth();
+}
+
+function mesesNoAno(p, ano, projetar) {
+  if (FORA_DO_FLUXO.includes(p.status)) return 0;
+  return mesesDeData(p.data_entrega || (projetar ? p.data_prevista : null), ano);
 }
 
 const capturadoNoAno = (p, ano, projetar) =>
@@ -1060,6 +1063,27 @@ function renderQuadro() {
     : `${lista.length} de ${estado.projetos.length} projetos · filtro ativo`;
 }
 
+// Quanto o projeto rende NESTE ano e quanto renderá num ano cheio. Antes
+// o card só mostrava horas, e o valor proporcional existia apenas somado
+// no painel — não dava para abrir um projeto e saber o que ele entrega.
+function linhaDinheiro(p) {
+  const anual = valorAno(p);
+  if (!anual || FORA_DO_FLUXO.includes(p.status)) return '';
+
+  const ano = HOJE.getFullYear();
+  const meses = mesesNoAno(p, ano, true);
+  const noAno = anual * meses / 12;
+  const entregue = !!p.data_entrega;
+
+  return `
+    <div class="kdinheiro" title="${entregue ? 'Entregue' : 'Previsto'}: ${meses} de 12 meses em ${ano}">
+      <span class="kd-ano"><b>${fmtReal(noAno)}</b>
+        ${entregue ? 'em' : 'previsto para'} ${ano}
+        ${meses && meses < 12 ? `<i>${meses}/12</i>` : ''}</span>
+      <span class="kd-cheio">${fmtReal(anual)}/ano cheio</span>
+    </div>`;
+}
+
 function cardKanban(p) {
   const r = calcRag(p);
   const dono = podeEditar();
@@ -1092,12 +1116,14 @@ function cardKanban(p) {
       <div class="kcard-meta">
         <span>${esc(p.responsavel || 'sem responsável')}</span>
         ${p.horas_mes ? `<span>${fmtNum(p.horas_mes, 1)} h/mês</span>` : ''}
+        ${p.sem_ganho_financeiro ? '<span class="ksemganho">sem ganho financeiro</span>' : ''}
         ${parado ? '' : `<span>${fmtData(p.data_prevista)}</span>`}
         ${nTarefas ? `<span class="ktarefa">${nFeitas}/${nTarefas} tarefas</span>` : ''}
         ${nAnexos ? `<span class="kanexo">${nAnexos} anexo${nAnexos > 1 ? 's' : ''}</span>` : ''}
         ${chamou ? '<span class="kmencao">@você</span>'
           : coments.length ? `<span class="kcoment">${coments.length} coment.</span>` : ''}
       </div>
+      ${linhaDinheiro(p)}
       ${dono ? `
         <select class="kcard-etapa" data-etapa-sel="${p.id}" title="Mover para outra etapa">
           ${ETAPAS.map((et) => `<option${et === p.etapa ? ' selected' : ''}>${esc(et)}</option>`).join('')}
@@ -2214,7 +2240,8 @@ $('#form-projeto').addEventListener('blur', (e) => {
 }, true);
 
 $('#form-projeto').addEventListener('input', (e) => {
-  if (e.target.matches?.('[data-formato]')) mostrarGanho();
+  if (e.target.matches?.('[data-formato]')
+      || e.target.name === 'data_entrega' || e.target.name === 'data_prevista') mostrarGanho();
 });
 
 $('#f-sem_ganho_financeiro').addEventListener('change', (e) => {
@@ -2222,6 +2249,26 @@ $('#f-sem_ganho_financeiro').addEventListener('change', (e) => {
   if (e.target.checked) setTimeout(() => $('#f-como_medimos').focus(), 60);
   mostrarGanho();
 });
+
+// Entregar em outubro não economiza doze meses: economiza três. A quebra
+// aparece aqui para a decisão de data ser tomada vendo o efeito dela.
+function quebraPorAno(anual) {
+  const total = anual + (numBR($('#f-custo_direto_ano').value) || 0);
+  const entrega = $('#f-data_entrega')?.value || '';
+  const prevista = $('#f-data_prevista')?.value || '';
+  const iso = entrega || prevista;
+  if (!iso || !total) return '';
+
+  const ano = HOJE.getFullYear();
+  const meses = mesesDeData(iso, ano);
+  const rotulo = entrega ? 'entregue' : 'previsto';
+
+  return `<span class="porano">`
+    + `<span><b>${fmtReal(total * meses / 12)}</b> em ${ano}`
+    + `<i>${meses} de 12 meses · ${rotulo} em ${fmtData(iso)}</i></span>`
+    + `<span><b>${fmtReal(total)}</b> em ${ano + 1}<i>ano cheio</i></span>`
+    + `</span>`;
+}
 
 // O número que a conta produz, à vista, antes de salvar.
 function mostrarGanho() {
@@ -2241,7 +2288,8 @@ function mostrarGanho() {
   if (g !== null) {
     el.className = 'calculado tem';
     el.innerHTML = `Ganho anual: <b>${fmtReal(g)}</b>/ano`
-      + `<small>${fmtNum(h, 1)} h/mês × ${fmtReal2(t)}/hora × 12 meses</small>`;
+      + `<small>${fmtNum(h, 1)} h/mês × ${fmtReal2(t)}/hora × 12 meses</small>`
+      + quebraPorAno(g);
     return;
   }
 
