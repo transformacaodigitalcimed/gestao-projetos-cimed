@@ -20,7 +20,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- O ?v= força o navegador a buscar a versão nova em vez da guardada em cache.
      SEMPRE que alterar style.css ou app.js, some 1 nos dois números abaixo. -->
-<link rel="stylesheet" href="style.css?v=22">
+<link rel="stylesheet" href="style.css?v=23">
 </head>
 <body>
 
@@ -384,6 +384,27 @@
       </div>
 
       <div class="campo largo">
+        <label class="marcacao">
+          <input type="checkbox" id="f-sem_ganho_financeiro" name="sem_ganho_financeiro">
+          <span>
+            Este projeto não tem ganho financeiro direto
+            <small>Recorrente e acima de ~R$ 10 mil/ano: informe horas e custo da hora.
+              Pontual, anual ou abaixo disso: marque aqui e diga como ele é medido.
+              O pilar não decide — Kit admissional é de experiência e vale R$ 24 mil.</small>
+          </span>
+        </label>
+      </div>
+
+      <div class="campo largo" id="campo-medimos" hidden>
+        <label for="f-como_medimos">
+          Como medimos este projeto
+          <span class="dica">adoção, alcance, eNPS — o que fizer sentido</span>
+        </label>
+        <input id="f-como_medimos" name="como_medimos" type="text" maxlength="300"
+               placeholder="Ex.: adoção pela liderança — quantos líderes usam na prática">
+      </div>
+
+      <div class="campo largo">
         <label for="f-custo_direto_ano">
           Custo direto evitado por ano
           <span class="dica">licença, contrato ou serviço que deixa de ser pago</span>
@@ -510,6 +531,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="app.js?v=22"></script>
+<script type="module" src="app.js?v=23"></script>
 </body>
 </html>

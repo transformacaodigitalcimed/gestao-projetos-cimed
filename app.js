@@ -820,7 +820,10 @@ function renderValor(ps) {
     // Projeto sem horas e sem custo entra na contagem mas não soma nada.
     // Entregar um desses mexe o "6" e não mexe o R$ — e aí parece que o
     // painel travou. Dizer quantos são tira o mistério.
-    f.semValor = f.itens.filter((p) => !valorAno(p) && !Number(p.horas_mes)).length;
+    // Quem declarou que não tem ganho financeiro não é falta de
+    // preenchimento: é decisão registrada. Não entra no aviso.
+    f.semValor = f.itens.filter((p) =>
+      !valorAno(p) && !Number(p.horas_mes) && !p.sem_ganho_financeiro).length;
   });
 
   const total = faixas.reduce((s, f) => s + f.rs, 0) || 1;
@@ -843,11 +846,15 @@ function renderValor(ps) {
   // evita prometer dinheiro onde o que existe é hora liberada.
   const caixa = somar(ps, (p) => custoDireto(p));
   const horas = somar(ps, (p) => porHoras(p));
-  $('#valor-tipos').innerHTML = caixa ? `
-    <span class="vt caixa"><b>${fmtReal(caixa)}</b>/ano em custo direto
-      <small>licenças e contratos que deixam de ser pagos</small></span>
+  const outroCriterio = ps.filter((p) => p.sem_ganho_financeiro).length;
+  $('#valor-tipos').innerHTML = (caixa || outroCriterio) ? `
+    ${caixa ? `<span class="vt caixa"><b>${fmtReal(caixa)}</b>/ano em custo direto
+      <small>licenças e contratos que deixam de ser pagos</small></span>` : ''}
     <span class="vt cap"><b>${fmtReal(horas)}</b>/ano em horas liberadas
-      <small>capacidade devolvida ao time</small></span>` : '';
+      <small>capacidade devolvida ao time</small></span>
+    ${outroCriterio ? `<span class="vt outro"><b>${outroCriterio}</b>
+      frente${outroCriterio > 1 ? 's' : ''} sem ganho financeiro
+      <small>medida${outroCriterio > 1 ? 's' : ''} por adoção e alcance, não por R$</small></span>` : ''}` : '';
 
   $('#valor-anos').innerHTML = `
     <div class="ano-bloco">
@@ -1825,13 +1832,15 @@ function abrirProjeto(id, etapaPadrao) {
   };
   ['nome', 'descricao', 'codigo', 'responsavel', 'solicitante', 'etapa', 'status',
    'data_inicio', 'data_prevista', 'data_entrega', 'prioridade', 'horas_mes',
-   'custo_hora', 'custo_direto_ano', 'progresso', 'proximo_passo', 'motivo_parada',
-   'observacoes', 'pilar'].forEach((campo) => {
+   'custo_hora', 'custo_direto_ano', 'como_medimos', 'progresso', 'proximo_passo',
+   'motivo_parada', 'observacoes', 'pilar'].forEach((campo) => {
     f.elements[campo].value = vals[campo] ?? '';
   });
   formatarCampoNumero(f.elements.horas_mes);
   formatarCampoNumero(f.elements.custo_hora);
   formatarCampoNumero(f.elements.custo_direto_ano);
+  f.elements.sem_ganho_financeiro.checked = !!vals.sem_ganho_financeiro;
+  $('#campo-medimos').hidden = !vals.sem_ganho_financeiro;
   mostrarGanho();
   $('#out-progresso').textContent = (vals.progresso || 0) + '%';
   $('#campo-motivo').hidden = !FORA_DO_FLUXO.includes(vals.status);
@@ -2208,12 +2217,26 @@ $('#form-projeto').addEventListener('input', (e) => {
   if (e.target.matches?.('[data-formato]')) mostrarGanho();
 });
 
+$('#f-sem_ganho_financeiro').addEventListener('change', (e) => {
+  $('#campo-medimos').hidden = !e.target.checked;
+  if (e.target.checked) setTimeout(() => $('#f-como_medimos').focus(), 60);
+  mostrarGanho();
+});
+
 // O número que a conta produz, à vista, antes de salvar.
 function mostrarGanho() {
   const h = numBR($('#f-horas_mes').value);
   const t = numBR($('#f-custo_hora').value);
   const g = ganhoAnual(h, t);
   const el = $('#calc-ganho');
+
+  // marcado como sem ganho financeiro: o bloco para de cobrar número
+  if ($('#f-sem_ganho_financeiro').checked) {
+    el.className = 'calculado outro';
+    el.innerHTML = 'Sem ganho financeiro direto'
+      + '<small>este projeto é medido por outro critério, não por R$</small>';
+    return;
+  }
 
   if (g !== null) {
     el.className = 'calculado tem';
@@ -2263,6 +2286,8 @@ $('#form-projeto').addEventListener('submit', async (e) => {
     horas_mes: numBR(f.elements.horas_mes.value),
     custo_hora: numBR(f.elements.custo_hora.value),
     custo_direto_ano: numBR(f.elements.custo_direto_ano.value),
+    sem_ganho_financeiro: f.elements.sem_ganho_financeiro.checked,
+    como_medimos: txt(f.elements.como_medimos.value),
     progresso: num(f.elements.progresso.value) || 0,
     proximo_passo: txt(f.elements.proximo_passo.value),
     observacoes: txt(f.elements.observacoes.value),
@@ -2399,6 +2424,8 @@ $('#btn-excel').addEventListener('click', async () => {
         'Ganho por horas (R$/ano)': p.custo_ano ?? '',
         'Custo direto evitado (R$/ano)': p.custo_direto_ano ?? '',
         'Ganho anual total (R$)': valorAno(p) || '',
+        'Sem ganho financeiro': p.sem_ganho_financeiro ? 'Sim' : '',
+        'Como medimos': p.como_medimos || '',
         [`Capturado em ${HOJE.getFullYear()} (R$)`]:
           Math.round(capturadoNoAno(p, HOJE.getFullYear(), false) * 100) / 100,
         'Meses rodando no ano': mesesNoAno(p, HOJE.getFullYear(), false),
