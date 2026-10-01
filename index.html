@@ -20,7 +20,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- O ?v= força o navegador a buscar a versão nova em vez da guardada em cache.
      SEMPRE que alterar style.css ou app.js, some 1 nos dois números abaixo. -->
-<link rel="stylesheet" href="style.css?v=24">
+<link rel="stylesheet" href="style.css?v=25">
 </head>
 <body>
 
@@ -303,6 +303,7 @@
       <div class="campo largo" id="campo-pilar" hidden>
         <label for="f-pilar">Pilar <span class="dica">em qual eixo do programa esta frente entra</span></label>
         <select id="f-pilar" name="pilar"></select>
+        <p class="pilar-criterio" id="pilar-criterio" hidden></p>
       </div>
 
       <div class="campo">
@@ -393,6 +394,18 @@
               O pilar não decide — Kit admissional é de experiência e vale R$ 24 mil.</small>
           </span>
         </label>
+      </div>
+
+      <div class="campo largo" id="campo-nps" hidden>
+        <label for="f-nps">
+          NPS medido
+          <span class="dica">a régua deste pilar — deixe vazio enquanto não houver medição</span>
+        </label>
+        <div class="campo-unidade">
+          <input id="f-nps" name="nps" type="text" inputmode="decimal"
+                 autocomplete="off" placeholder="—" data-formato="horas">
+          <span class="unidade">NPS</span>
+        </div>
       </div>
 
       <div class="campo largo" id="campo-medimos" hidden>
@@ -531,6 +544,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="app.js?v=24"></script>
+<script type="module" src="app.js?v=25"></script>
 </body>
 </html>

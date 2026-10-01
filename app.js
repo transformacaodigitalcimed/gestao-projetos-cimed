@@ -695,6 +695,24 @@ $('#kpis').addEventListener('click', (e) => {
   if (k) focarNoQuadro(k.dataset.foco, k.dataset.col || '');
 });
 
+// O conceito de cada pilar mora no banco, com as palavras do Deco, e
+// aparece exatamente onde alguém classifica um projeto. Antes o critério
+// existia só na memória de quem esteve na reunião.
+function mostrarCriterioPilar() {
+  const pl = pilarDe($('#f-pilar').value);
+  const el = $('#pilar-criterio');
+  el.hidden = !pl || !(pl.desc || pl.metrica);
+  if (el.hidden) { $('#campo-nps').hidden = true; return; }
+
+  el.innerHTML = (pl.desc ? `<span class="pc-desc">${esc(pl.desc)}</span>` : '')
+    + (pl.metrica ? `<span class="pc-metrica">Como se mede: ${esc(pl.metrica)}</span>` : '');
+
+  // o campo de NPS só aparece no pilar que o usa como régua
+  $('#campo-nps').hidden = !/NPS/i.test(pl.metrica || '');
+}
+
+$('#f-pilar').addEventListener('change', mostrarCriterioPilar);
+
 function irPara(view) {
   estado.view = view;
   $$('.nav-item').forEach((b) => b.classList.toggle('ativo', b.dataset.view === view));
@@ -850,11 +868,14 @@ function renderValor(ps) {
   const caixa = somar(ps, (p) => custoDireto(p));
   const horas = somar(ps, (p) => porHoras(p));
   const outroCriterio = ps.filter((p) => p.sem_ganho_financeiro).length;
+  const baseRH = custoEstrutura();
+  const pctRH = baseRH ? ((caixa + horas) / baseRH * 100).toFixed(1).replace('.', ',') + '%' : '';
   $('#valor-tipos').innerHTML = (caixa || outroCriterio) ? `
     ${caixa ? `<span class="vt caixa"><b>${fmtReal(caixa)}</b>/ano em custo direto
       <small>licenças e contratos que deixam de ser pagos</small></span>` : ''}
     <span class="vt cap"><b>${fmtReal(horas)}</b>/ano em horas liberadas
-      <small>capacidade devolvida ao time</small></span>
+      <small>${fmtNum(hcEquivalente(somar(ps, (p) => Number(p.horas_mes || 0))), 2)} pessoas
+        em tempo integral${pctRH ? ` · ${pctRH} do custo de RH` : ''}</small></span>
     ${outroCriterio ? `<span class="vt outro"><b>${outroCriterio}</b>
       frente${outroCriterio > 1 ? 's' : ''} sem ganho financeiro
       <small>medida${outroCriterio > 1 ? 's' : ''} por adoção e alcance, não por R$</small></span>` : ''}` : '';
@@ -892,6 +913,22 @@ function renderValor(ps) {
 // --------------------------------------------------- FRENTES POR PILAR
 // É o recorte do deck: quantas frentes, quanto valem e em que fase estão.
 // Sai do banco, então não precisa ser refeito à mão a cada apresentação.
+// Um profissional em tempo integral = 176 h/mês (jornada de 44h de Pouso
+// Alegre). O Deco pediu "horas e HC": HC não vira coluna no banco, é esta
+// divisão — guardar número derivável é criar duas versões da verdade.
+const HORAS_INTEGRAL = 176;
+const hcEquivalente = (horas) => horas / HORAS_INTEGRAL;
+
+// Denominador do "% do custo operacional", que ele pediu. Vazio no banco
+// significa simplesmente não mostrar o percentual.
+function custoEstrutura() {
+  const alvo = estado.programaAtivo
+    ? estado.programas.filter((pr) => pr.id === estado.programaAtivo)
+    : estado.programas;
+  const t = alvo.reduce((s, pr) => s + Number(pr.custo_estrutura_ano || 0), 0);
+  return t || null;
+}
+
 function renderPilares(ps) {
   $('#painel-pilares').hidden = !PILARES.length;
   if (!PILARES.length) return;
@@ -906,6 +943,9 @@ function renderPilares(ps) {
   $('#pilares').innerHTML = grupos.map((g) => {
     const horas = g.itens.reduce((s, p) => s + Number(p.horas_mes || 0), 0);
     const custo = g.itens.reduce((s, p) => s + valorAno(p), 0);
+    const nps = g.itens.map((p) => Number(p.nps)).filter((n) => Number.isFinite(n) && n !== 0);
+    const base = custoEstrutura();
+    const pct = (base && custo) ? (custo / base * 100).toFixed(1).replace('.', ',') + '%' : '';
 
     // a quebra por fase, na ordem em que a leitura faz sentido
     const fases = [
@@ -922,10 +962,14 @@ function renderPilares(ps) {
           <span class="pilar-nome">${esc(g.nome)}</span>
           <span class="pilar-n">${g.itens.length}</span>
         </div>
+        ${g.metrica ? `<p class="pilar-metrica">${esc(g.metrica)}</p>` : ''}
         <div class="pilar-numeros">
           ${horas ? `<span><b>${fmtNum(horas, 1)}</b> h/mês</span>` : ''}
+          ${horas ? `<span><b>${fmtNum(hcEquivalente(horas), 2)}</b> HC</span>` : ''}
           ${custo ? `<span><b>${fmtReal(custo)}</b>/ano</span>` : ''}
-          ${!horas && !custo ? '<span class="sem-meta">sem meta financeira</span>' : ''}
+          ${pct ? `<span><b>${pct}</b> do custo de RH</span>` : ''}
+          ${nps.length ? `<span><b>${fmtNum(nps.reduce((s, n) => s + n, 0) / nps.length, 0)}</b> NPS médio</span>` : ''}
+          ${!horas && !custo && !nps.length ? '<span class="sem-meta">medido por outro critério</span>' : ''}
         </div>
         <ul class="pilar-fases">
           ${fases.map(([rot, n]) => `<li><span>${rot}</span><b>${n}</b></li>`).join('')}
@@ -1858,13 +1902,14 @@ function abrirProjeto(id, etapaPadrao) {
   };
   ['nome', 'descricao', 'codigo', 'responsavel', 'solicitante', 'etapa', 'status',
    'data_inicio', 'data_prevista', 'data_entrega', 'prioridade', 'horas_mes',
-   'custo_hora', 'custo_direto_ano', 'como_medimos', 'progresso', 'proximo_passo',
+   'custo_hora', 'custo_direto_ano', 'como_medimos', 'nps', 'progresso', 'proximo_passo',
    'motivo_parada', 'observacoes', 'pilar'].forEach((campo) => {
     f.elements[campo].value = vals[campo] ?? '';
   });
   formatarCampoNumero(f.elements.horas_mes);
   formatarCampoNumero(f.elements.custo_hora);
   formatarCampoNumero(f.elements.custo_direto_ano);
+  mostrarCriterioPilar();
   f.elements.sem_ganho_financeiro.checked = !!vals.sem_ganho_financeiro;
   $('#campo-medimos').hidden = !vals.sem_ganho_financeiro;
   mostrarGanho();
@@ -2334,6 +2379,7 @@ $('#form-projeto').addEventListener('submit', async (e) => {
     horas_mes: numBR(f.elements.horas_mes.value),
     custo_hora: numBR(f.elements.custo_hora.value),
     custo_direto_ano: numBR(f.elements.custo_direto_ano.value),
+    nps: numBR(f.elements.nps.value),
     sem_ganho_financeiro: f.elements.sem_ganho_financeiro.checked,
     como_medimos: txt(f.elements.como_medimos.value),
     progresso: num(f.elements.progresso.value) || 0,
@@ -2474,6 +2520,7 @@ $('#btn-excel').addEventListener('click', async () => {
         'Ganho anual total (R$)': valorAno(p) || '',
         'Sem ganho financeiro': p.sem_ganho_financeiro ? 'Sim' : '',
         'Como medimos': p.como_medimos || '',
+        'NPS': p.nps ?? '',
         [`Capturado em ${HOJE.getFullYear()} (R$)`]:
           Math.round(capturadoNoAno(p, HOJE.getFullYear(), false) * 100) / 100,
         'Meses rodando no ano': mesesNoAno(p, HOJE.getFullYear(), false),

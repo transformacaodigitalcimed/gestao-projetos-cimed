@@ -233,6 +233,17 @@ table{border-collapse:collapse;width:100%}
 .ksemganho{color:var(--compliance);font-weight:700}
 /* a marcação de "não tem ganho financeiro": a regra fica escrita aqui,
    para não viver só na memória de quem combinou */
+/* o critério do pilar, lido na hora de classificar */
+.pilar-criterio{
+  margin:8px 0 0;padding:10px 13px;border-radius:var(--raio);
+  background:var(--neutro-luz);font-size:12px;line-height:1.5;color:var(--cinza);
+}
+.pc-desc{display:block}
+.pc-metrica{display:block;margin-top:5px;font-weight:700;color:var(--grafite)}
+.pilar-metrica{
+  margin:5px 0 9px;font-size:11px;line-height:1.45;color:var(--cinza-claro);
+  font-weight:600;
+}
 .marcacao{display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-weight:600}
 .marcacao input{margin-top:2px;width:16px;height:16px;flex:none;accent-color:var(--amarelo-esc);cursor:pointer}
 .marcacao small{display:block;font-weight:500;font-size:11.5px;color:var(--cinza-claro);
