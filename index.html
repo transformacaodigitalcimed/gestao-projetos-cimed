@@ -20,7 +20,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- O ?v= força o navegador a buscar a versão nova em vez da guardada em cache.
      SEMPRE que alterar style.css ou app.js, some 1 nos dois números abaixo. -->
-<link rel="stylesheet" href="style.css?v=17">
+<link rel="stylesheet" href="style.css?v=21">
 </head>
 <body>
 
@@ -119,12 +119,13 @@
         <div class="valor-cab">
           <div>
             <h3>Valor do programa</h3>
-            <p class="dica-bloco">Quanto do ganho anual já está entregue, quanto está a caminho e quanto ainda não começou.</p>
+            <p class="dica-bloco">O que o ano já capturou de verdade, e quanto o portfólio vale por ano quando estiver todo no ar.</p>
           </div>
           <div class="valor-total" id="valor-total"></div>
         </div>
         <div class="valor-barra" id="valor-barra"></div>
         <div class="valor-blocos" id="valor-blocos"></div>
+        <div class="valor-anos" id="valor-anos"></div>
       </div>
 
       <div class="kpis" id="kpis"></div>
@@ -359,11 +360,26 @@
 
       <div class="campo">
         <label for="f-horas_mes">Horas/mês economizadas</label>
-        <input id="f-horas_mes" name="horas_mes" type="number" step="0.1" min="0">
+        <div class="campo-unidade">
+          <input id="f-horas_mes" name="horas_mes" type="text" inputmode="decimal"
+                 autocomplete="off" placeholder="0" data-formato="horas">
+          <span class="unidade">h/mês</span>
+        </div>
       </div>
       <div class="campo">
-        <label for="f-custo_ano">Custo evitado / ano (R$)</label>
-        <input id="f-custo_ano" name="custo_ano" type="number" step="0.01" min="0">
+        <label for="f-custo_hora">Custo da hora</label>
+        <div class="campo-unidade">
+          <span class="unidade antes">R$</span>
+          <input id="f-custo_hora" name="custo_hora" type="text" inputmode="decimal"
+                 autocomplete="off" placeholder="0,00" data-formato="moeda">
+          <span class="unidade">/hora</span>
+        </div>
+      </div>
+
+      <div class="campo largo">
+        <p class="calculado" id="calc-ganho">
+          Informe as horas e o custo da hora para o sistema calcular o ganho.
+        </p>
       </div>
 
       <div class="campo largo">
@@ -480,6 +496,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="app.js?v=17"></script>
+<script type="module" src="app.js?v=21"></script>
 </body>
 </html>

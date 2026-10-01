@@ -56,8 +56,24 @@ function aplicarPrograma(id) {
 
   try { localStorage.setItem('programa', estado.programaAtivo); } catch { /* sem problema */ }
 }
-const STATUS = ['Não iniciado', 'Em mapeamento', 'Em construção', 'Em ajustes',
-                'Entregue', 'Congelado', 'Cancelado', 'Descontinuado'];
+const STATUS = ['Não iniciado', 'Em mapeamento', 'Em construção', 'Em homologação',
+                'Entregue', 'Em melhoria', 'Congelado', 'Cancelado', 'Descontinuado'];
+
+// Status que já contam como entrega. "Em melhoria" é entrega viva: está
+// rodando, o ganho já é real, e continua evoluindo. Por isso ela NÃO pode
+// zerar o R$ capturado — se contasse como obra, mover um projeto no ar para
+// melhoria apagaria o valor do painel.
+const ENTREGUES = ['Entregue', 'Em melhoria'];
+
+// A lista do banco pode ter status antigo que saiu daqui (ex.: 'Em ajustes',
+// hoje 'Em homologação'). Mostrar o valor real evita que abrir a ficha de um
+// projeto troque o status dele sem ninguém pedir.
+function statusDisponiveis() {
+  const extras = [...new Set(estado.projetos.map((p) => p.status).filter(Boolean))]
+    .filter((v) => !STATUS.includes(v))
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  return [...STATUS, ...extras];
+}
 
 // Status que tiram o projeto do fluxo: não cobram prazo e vivem na
 // última coluna do Quadro.
@@ -70,11 +86,12 @@ const RAG = {
   a: { nome: 'Atenção',   cls: 'a', cor: 'var(--ambar)' },
   v: { nome: 'No prazo',  cls: 'v', cor: 'var(--verde)' },
   c: { nome: 'Entregue',  cls: 'c', cor: 'var(--entregue)' },
+  m: { nome: 'Em melhoria', cls: 'm', cor: 'var(--melhoria)' },
   s: { nome: 'Sem prazo', cls: 'n', cor: 'var(--cinza-claro)' },
   z: { nome: 'Congelado', cls: 'z', cor: 'var(--congelado)' },
   x: { nome: 'Cancelado', cls: 'x', cor: 'var(--cancelado)' },
 };
-const ORDEM_RAG = ['r', 'a', 'v', 's', 'c', 'z', 'x'];
+const ORDEM_RAG = ['r', 'a', 'v', 's', 'c', 'm', 'z', 'x'];
 
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
@@ -158,6 +175,69 @@ const fmtNum = (n, casas = 0) =>
   n === null || n === undefined || n === '' ? '—'
     : Number(n).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
 const fmtReal = (n) => (n ? 'R$ ' + fmtNum(n) : '—');
+// taxa horária precisa dos centavos: R$ 60,76 arredondado para R$ 61
+// muda a conta em mais de mil reais por ano.
+const fmtReal2 = (n) => (n || n === 0 ? 'R$ ' + fmtNum(n, 2) : '—');
+
+// Campo de dinheiro e de horas: aceita o jeito que a pessoa digita —
+// 114000 · 114.000 · 114.000,00 · 47296,76 — e devolve número limpo.
+// Tendo vírgula, ela é a decimal e os pontos são separador de milhar.
+// Sem vírgula, um ponto sozinho com até duas casas também é decimal
+// (quem cola de planilha em inglês escreve 47296.76).
+function numBR(v) {
+  const t = String(v ?? '').replace(/[^\d.,-]/g, '').trim();
+  if (!t) return null;
+  let limpo;
+  if (t.includes(',')) {
+    limpo = t.replace(/\./g, '').replace(',', '.');
+  } else {
+    const partes = t.split('.');
+    limpo = (partes.length === 2 && partes[1].length <= 2) ? t : t.replace(/\./g, '');
+  }
+  const n = Number(limpo);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Sai do campo, ele se arruma: 114000 vira 114.000,00. Sem isso o número
+// fica uma fileira de dígitos e ninguém sabe se são mil ou cem mil reais.
+// ---------------------------------------------------------------- VALOR
+// O ganho anual deixou de ser digitado: ele é horas/mês × custo da hora
+// × 12. Antes os dois campos eram independentes e nada impedia alguém
+// gravar 50 h/mês com um valor anual que não conversava com elas.
+const ganhoAnual = (horas, taxa) =>
+  (Number(horas) > 0 && Number(taxa) > 0) ? Number(horas) * Number(taxa) * 12 : null;
+
+// Quantos meses o projeto roda DENTRO de um ano. Entregar em outubro não
+// economiza doze meses em 2026: economiza três. Sem isso o painel conta
+// como capturado um dinheiro que o ano ainda não viu.
+//
+// Regra: o mês da entrega conta inteiro (entregou em outubro, conta
+// out/nov/dez = 3). `projetar` usa a data prevista de quem ainda não
+// entregou, para responder "e se tudo sair no prazo?".
+function mesesNoAno(p, ano, projetar) {
+  if (FORA_DO_FLUXO.includes(p.status)) return 0;
+  const iso = p.data_entrega || (projetar ? p.data_prevista : null);
+  if (!iso) return 0;
+  const d = paraData(iso);
+  if (!d || Number.isNaN(d.getTime())) return 0;
+  if (d.getFullYear() > ano) return 0;
+  if (d.getFullYear() < ano) return 12;
+  return 12 - d.getMonth();
+}
+
+const capturadoNoAno = (p, ano, projetar) =>
+  Number(p.custo_ano || 0) * mesesNoAno(p, ano, projetar) / 12;
+
+const somar = (ps, fn) => ps.reduce((s, p) => s + fn(p), 0);
+
+function formatarCampoNumero(el) {
+  if (!el) return;
+  const n = numBR(el.value);
+  if (n === null) { el.value = ''; return; }
+  el.value = el.dataset.formato === 'moeda'
+    ? n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+}
 
 // =====================================================================
 // CONFIRMAÇÃO — nada é apagado sem dizer antes o que se perde junto
@@ -311,7 +391,11 @@ function calcRag(p) {
   if (ENCERRADOS.includes(p.status)) return { k: 'x', motivo: p.status };
   if (CONGELADOS.includes(p.status)) return { k: 'z', motivo: 'Congelado' };
 
-  if (p.status === 'Entregue' || p.data_entrega) return { k: 'c', motivo: 'Entregue' };
+  // Em melhoria vem antes de Entregue: ela também tem data de entrega, mas
+  // merece cor própria — é o único jeito de enxergar no Quadro o que já está
+  // no ar e ainda está sendo mexido.
+  if (p.status === 'Em melhoria') return { k: 'm', motivo: 'No ar, em evolução' };
+  if (ENTREGUES.includes(p.status) || p.data_entrega) return { k: 'c', motivo: 'Entregue' };
   if (!p.data_prevista) return { k: 's', motivo: 'Sem previsão de entrega definida' };
 
   const restam = dias(HOJE, paraData(p.data_prevista));
@@ -563,6 +647,42 @@ $('#parados').addEventListener('toggle', (e) => {
   if (d) estado.abrirParados = d.open;
 }, true);
 
+// Clicar num indicador da Visão geral: filtra o Quadro, abre a aba e rola
+// até a coluna correspondente. Sem isso o número é um beco sem saída.
+function focarNoQuadro(filtro, etapa) {
+  $('#busca').value = '';
+  $('#filtro').value = filtro;
+  if (etapa && etapa === ETAPA_PARADA) estado.abrirParados = true;
+
+  irPara('quadro');
+  renderQuadro();
+  if (!etapa) return;
+
+  // espera o scroll suave para o topo terminar, senão os dois brigam
+  setTimeout(() => {
+    const alvo = etapa === ETAPA_PARADA
+      ? $('#parados .kparados')
+      : [...$$('#kanban .kcol')].find((c) => c.dataset.etapa === etapa);
+    if (!alvo) return;
+
+    const box = $('#kanban');
+    if (box.contains(alvo)) {
+      const dx = alvo.getBoundingClientRect().left - box.getBoundingClientRect().left;
+      box.scrollTo({ left: box.scrollLeft + dx - (box.clientWidth - alvo.offsetWidth) / 2,
+                     behavior: 'smooth' });
+    } else {
+      alvo.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    alvo.classList.add('focada');
+    setTimeout(() => alvo.classList.remove('focada'), 2400);
+  }, 360);
+}
+
+$('#kpis').addEventListener('click', (e) => {
+  const k = e.target.closest('[data-foco]');
+  if (k) focarNoQuadro(k.dataset.foco, k.dataset.col || '');
+});
+
 function irPara(view) {
   estado.view = view;
   $$('.nav-item').forEach((b) => b.classList.toggle('ativo', b.dataset.view === view));
@@ -601,8 +721,9 @@ function renderVisao() {
   const cont = Object.fromEntries(ORDEM_RAG.map((k) => [k, 0]));
   ps.forEach((p) => cont[calcRag(p).k]++);
 
-  const ativos = ps.filter((p) => p.status !== 'Entregue' && !FORA_DO_FLUXO.includes(p.status));
-  const entregues = ps.filter((p) => p.status === 'Entregue');
+  const ativos = ps.filter((p) => !ENTREGUES.includes(p.status) && !FORA_DO_FLUXO.includes(p.status));
+  const entregues = ps.filter((p) => ENTREGUES.includes(p.status));
+  const melhorias = ps.filter((p) => p.status === 'Em melhoria');
   const parados = ps.filter((p) => FORA_DO_FLUXO.includes(p.status));
 
   $('#visao-sub').textContent =
@@ -614,17 +735,26 @@ function renderVisao() {
   renderRitmo(ps);
   renderCarga(ativos);
 
+  // Cada indicador é um botão: leva ao Quadro já filtrado e, quando existe
+  // uma coluna correspondente, rola até ela. Ler o número e não conseguir
+  // chegar nos projetos por trás dele era um beco sem saída.
   $('#kpis').innerHTML = [
-    ['destaque', 'Em andamento', ativos.length, 'de ' + ps.length + ' no portfólio'],
-    ['r', 'Atrasados', cont.r, 'prazo vencido'],
-    ['c', 'Entregues', entregues.length, 'desde o início do programa'],
-    ['z', 'Congelados e cancelados', parados.length, 'fora do fluxo'],
-  ].map(([cls, rot, num, pe]) => `
-    <div class="kpi ${cls}">
-      <div class="kpi-rot">${esc(rot)}</div>
-      <div class="kpi-num">${esc(num)}</div>
-      <div class="kpi-pe">${esc(pe)}</div>
-    </div>`).join('');
+    ['destaque', 'Em andamento', ativos.length, 'de ' + ps.length + ' no portfólio',
+     'foco::andamento', ''],
+    ['r', 'Atrasados', cont.r, 'prazo vencido', 'rag::r', ''],
+    ['c', 'Entregues', entregues.length,
+     melhorias.length ? melhorias.length + ' ainda em melhoria' : 'desde o início do programa',
+     'foco::entregues', ETAPA_ENTREGUE],
+    ['z', 'Congelados e cancelados', parados.length, 'fora do fluxo',
+     'foco::parados', ETAPA_PARADA],
+  ].map(([cls, rot, num, pe, foco, col]) => `
+    <button type="button" class="kpi ${cls}" data-foco="${esc(foco)}" data-col="${esc(col)}"
+            title="Ver estes projetos no Quadro">
+      <span class="kpi-rot">${esc(rot)}</span>
+      <span class="kpi-num">${esc(num)}</span>
+      <span class="kpi-pe">${esc(pe)}</span>
+      <span class="kpi-ir">ver no quadro →</span>
+    </button>`).join('');
 
   // barra de saúde
   const total = ps.length || 1;
@@ -665,10 +795,10 @@ function renderValor(ps) {
   const faixas = [
     { k: 'feito', rot: 'Já entregue', cor: 'var(--entregue)',
       desc: 'ganho capturado, rodando hoje',
-      itens: ps.filter((p) => p.status === 'Entregue') },
+      itens: ps.filter((p) => ENTREGUES.includes(p.status)) },
     { k: 'andando', rot: 'Em construção', cor: 'var(--amarelo-esc)',
       desc: 'a caminho, com data marcada',
-      itens: ps.filter((p) => p.status !== 'Entregue' && !FORA_DO_FLUXO.includes(p.status)
+      itens: ps.filter((p) => !ENTREGUES.includes(p.status) && !FORA_DO_FLUXO.includes(p.status)
                               && p.etapa !== 'Fila') },
     { k: 'fila', rot: 'Na fila', cor: 'var(--cinza-claro)',
       desc: 'potencial ainda não iniciado',
@@ -678,15 +808,39 @@ function renderValor(ps) {
   faixas.forEach((f) => {
     f.rs = f.itens.reduce((s, p) => s + Number(p.custo_ano || 0), 0);
     f.hs = f.itens.reduce((s, p) => s + Number(p.horas_mes || 0), 0);
+    // Projeto sem horas e sem custo entra na contagem mas não soma nada.
+    // Entregar um desses mexe o "6" e não mexe o R$ — e aí parece que o
+    // painel travou. Dizer quantos são tira o mistério.
+    f.semValor = f.itens.filter((p) => !Number(p.custo_ano) && !Number(p.horas_mes)).length;
   });
 
   const total = faixas.reduce((s, f) => s + f.rs, 0) || 1;
   const feito = faixas[0].rs;
 
+  // O destaque é o que o ANO realmente capturou, não o valor anual cheio.
+  // Um projeto entregue em agosto rendeu cinco meses em 2026, não doze —
+  // e era isso que o número antigo prometia sem querer.
+  const ANO = HOJE.getFullYear();
+  const realizado = somar(ps, (p) => capturadoNoAno(p, ANO, false));
+  const previsto  = somar(ps, (p) => capturadoNoAno(p, ANO, true));
+  const proximo   = somar(ps, (p) => capturadoNoAno(p, ANO + 1, true));
+
   $('#valor-total').innerHTML = `
-    <span class="valor-num">${fmtReal(feito)}</span>
-    <span class="valor-rot">já capturado de ${fmtReal(total)}/ano
-      · ${Math.round((feito / total) * 100)}% do programa</span>`;
+    <span class="valor-num">${fmtReal(realizado)}</span>
+    <span class="valor-rot">capturado em ${ANO}
+      · de ${fmtReal(feito)}/ano já no ar</span>`;
+
+  $('#valor-anos').innerHTML = `
+    <div class="ano-bloco">
+      <div class="ano-rot">Previsão de fechar ${ANO}</div>
+      <div class="ano-num">${fmtReal(previsto)}</div>
+      <div class="ano-pe">se tudo que tem data entregar no prazo</div>
+    </div>
+    <div class="ano-bloco proj">
+      <div class="ano-rot">Projetado para ${ANO + 1}</div>
+      <div class="ano-num">${fmtReal(proximo)}</div>
+      <div class="ano-pe">ano cheio de tudo que estiver rodando</div>
+    </div>`;
 
   $('#valor-barra').innerHTML = faixas
     .filter((f) => f.rs)
@@ -700,6 +854,8 @@ function renderValor(ps) {
         <div class="vb-rot">${esc(f.rot)} <b>${f.itens.length}</b></div>
         <div class="vb-num">${fmtReal(f.rs)}<small>/ano</small></div>
         <div class="vb-pe">${f.hs ? fmtNum(f.hs, 1) + ' h/mês · ' : ''}${esc(f.desc)}</div>
+        ${f.semValor ? `<div class="vb-falta">${f.semValor} projeto${f.semValor > 1 ? 's' : ''} sem
+          horas nem custo informados — não entra${f.semValor > 1 ? 'm' : ''} nesta conta</div>` : ''}
       </div>
     </div>`).join('');
 }
@@ -724,9 +880,9 @@ function renderPilares(ps) {
 
     // a quebra por fase, na ordem em que a leitura faz sentido
     const fases = [
-      ['Entregues', g.itens.filter((p) => p.status === 'Entregue').length],
-      ['Em andamento', g.itens.filter((p) => !['Entregue', 'Não iniciado'].includes(p.status)
-        && !FORA_DO_FLUXO.includes(p.status)).length],
+      ['Entregues', g.itens.filter((p) => ENTREGUES.includes(p.status)).length],
+      ['Em andamento', g.itens.filter((p) => !ENTREGUES.includes(p.status)
+        && p.status !== 'Não iniciado' && !FORA_DO_FLUXO.includes(p.status)).length],
       ['Não iniciadas', g.itens.filter((p) => p.status === 'Não iniciado').length],
       ['Fora do fluxo', g.itens.filter((p) => FORA_DO_FLUXO.includes(p.status)).length],
     ].filter(([, n]) => n);
@@ -921,7 +1077,7 @@ function cardKanban(p) {
           ${ETAPAS.map((et) => `<option${et === p.etapa ? ' selected' : ''}>${esc(et)}</option>`).join('')}
         </select>
         <select class="kcard-status" data-status="${p.id}" title="Mudar o status">
-          ${STATUS.map((s) => `<option${s === p.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}
+          ${statusDisponiveis().map((s) => `<option${s === p.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}
         </select>
         ${parado ? '' : `
         <div class="kcard-prog">
@@ -1061,7 +1217,7 @@ function ligarQuadro() {
     if (st) {
       const p = estado.projetos.find((x) => x.id === st.dataset.status);
       if (!p) return;
-      const entregando = st.value === 'Entregue' && p.status !== 'Entregue';
+      const entregando = ENTREGUES.includes(st.value) && !ENTREGUES.includes(p.status);
       await mudarCampo(p.id, camposParaStatus(p, st.value));
       if (entregando) soltarConfete();
       return;
@@ -1107,7 +1263,9 @@ function camposParaEtapa(p, etapa) {
   const campos = { etapa };
 
   if (etapa === ETAPA_ENTREGUE && p.etapa !== ETAPA_ENTREGUE) {
-    campos.status = 'Entregue';
+    // quem já estava "Em melhoria" continua em melhoria: arrastar para a
+    // coluna de entregues não pode rebaixar o status de volta.
+    if (!ENTREGUES.includes(p.status)) campos.status = 'Entregue';
     campos.progresso = 100;
     if (!p.data_entrega) campos.data_entrega = isoHoje();
 
@@ -1118,7 +1276,7 @@ function camposParaEtapa(p, etapa) {
 
   } else if (etapa !== ETAPA_ENTREGUE && p.etapa === ETAPA_ENTREGUE) {
     campos.data_entrega = null;
-    if (p.status === 'Entregue') campos.status = 'Em construção';
+    if (ENTREGUES.includes(p.status)) campos.status = 'Em construção';
 
   } else if (etapa !== ETAPA_PARADA && p.etapa === ETAPA_PARADA) {
     // voltou ao fluxo: sai do congelamento e o motivo deixa de valer
@@ -1133,7 +1291,7 @@ function camposParaEtapa(p, etapa) {
 function camposParaStatus(p, status) {
   const campos = { status };
 
-  if (status === 'Entregue') {
+  if (ENTREGUES.includes(status)) {
     campos.progresso = 100;
     campos.etapa = ETAPA_ENTREGUE;
     if (!p.data_entrega) campos.data_entrega = isoHoje();
@@ -1143,7 +1301,7 @@ function camposParaStatus(p, status) {
     campos.data_entrega = null;
 
   } else {
-    if (p.status === 'Entregue') campos.data_entrega = null;
+    if (ENTREGUES.includes(p.status)) campos.data_entrega = null;
     if (p.etapa === ETAPA_ENTREGUE || p.etapa === ETAPA_PARADA) campos.etapa = 'Prioritário';
     if (FORA_DO_FLUXO.includes(p.status)) campos.motivo_parada = null;
   }
@@ -1362,7 +1520,7 @@ function renderLeituraCronograma(ps) {
 
   // 6 · projetos sem prazo nenhum
   const semPrazo = estado.projetos.filter(
-    (p) => !p.data_prevista && !FORA_DO_FLUXO.includes(p.status) && p.status !== 'Entregue');
+    (p) => !p.data_prevista && !FORA_DO_FLUXO.includes(p.status) && !ENTREGUES.includes(p.status));
   if (semPrazo.length) {
     achados.push({
       tipo: 'alerta',
@@ -1394,6 +1552,15 @@ function projetosFiltrados() {
     if (tipo === 'pilar' && (p.pilar || '') !== valor) return false;
     if (tipo === 'resp' && (p.responsavel || '') !== valor) return false;
     if (tipo === 'status' && p.status !== valor) return false;
+
+    // os atalhos dos indicadores da Visão geral
+    if (tipo === 'foco') {
+      const entregue = ENTREGUES.includes(p.status);
+      const parado = FORA_DO_FLUXO.includes(p.status);
+      if (valor === 'andamento' && (entregue || parado)) return false;
+      if (valor === 'entregues' && !entregue) return false;
+      if (valor === 'parados' && !parado) return false;
+    }
 
     if (busca) {
       const alvo = [p.nome, p.codigo, p.responsavel, p.solicitante,
@@ -1432,15 +1599,28 @@ function renderFiltros() {
       '</optgroup>';
   };
 
+  // Os três atalhos ficam no topo, fora de grupo: são a mesma pergunta que
+  // os indicadores da Visão geral respondem, e é para cá que eles levam.
+  const atalho = (v, rot, teste) => {
+    const n = conta(teste);
+    return n ? `<option value="${v}">${esc(rot)} (${n})</option>` : '';
+  };
+
   $('#filtro').innerHTML =
     '<option value="">Todos os projetos</option>' +
+    atalho('foco::andamento', 'Em andamento',
+      (p) => !ENTREGUES.includes(p.status) && !FORA_DO_FLUXO.includes(p.status)) +
+    atalho('foco::entregues', 'Entregues',
+      (p) => ENTREGUES.includes(p.status)) +
+    atalho('foco::parados', 'Congelados e cancelados',
+      (p) => FORA_DO_FLUXO.includes(p.status)) +
     grupo('Situação', ORDEM_RAG.map((k) => [`rag::${k}`, RAG[k].nome, conta((p) => calcRag(p).k === k)])) +
     grupo('Pilar', PILARES.map((pl) => [`pilar::${pl.nome}`, pl.curto || pl.nome,
       conta((p) => p.pilar === pl.nome)])) +
     grupo('Responsável', [...new Set(estado.projetos.map((p) => p.responsavel).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, 'pt-BR'))
       .map((r) => [`resp::${r}`, r, conta((p) => p.responsavel === r)])) +
-    grupo('Status', STATUS.map((s) => [`status::${s}`, s, conta((p) => p.status === s)]));
+    grupo('Status', statusDisponiveis().map((s) => [`status::${s}`, s, conta((p) => p.status === s)]));
 
   $('#filtro').value = atual;
   if (!$('#filtro').value) $('#filtro').value = '';
@@ -1603,7 +1783,7 @@ $('#btn-marcar-lido').addEventListener('click', async () => {
 // =====================================================================
 function montarSelects() {
   $('#f-etapa').innerHTML = ETAPAS.map((v) => `<option>${esc(v)}</option>`).join('');
-  $('#f-status').innerHTML = STATUS.map((v) => `<option>${esc(v)}</option>`).join('');
+  $('#f-status').innerHTML = statusDisponiveis().map((v) => `<option>${esc(v)}</option>`).join('');
 
   // o campo de pilar só existe onde o programa define pilares
   $('#campo-pilar').hidden = !PILARES.length;
@@ -1626,10 +1806,13 @@ function abrirProjeto(id, etapaPadrao) {
   };
   ['nome', 'descricao', 'codigo', 'responsavel', 'solicitante', 'etapa', 'status',
    'data_inicio', 'data_prevista', 'data_entrega', 'prioridade', 'horas_mes',
-   'custo_ano', 'progresso', 'proximo_passo', 'motivo_parada', 'observacoes',
+   'custo_hora', 'progresso', 'proximo_passo', 'motivo_parada', 'observacoes',
    'pilar'].forEach((campo) => {
     f.elements[campo].value = vals[campo] ?? '';
   });
+  formatarCampoNumero(f.elements.horas_mes);
+  formatarCampoNumero(f.elements.custo_hora);
+  mostrarGanho();
   $('#out-progresso').textContent = (vals.progresso || 0) + '%';
   $('#campo-motivo').hidden = !FORA_DO_FLUXO.includes(vals.status);
 
@@ -1720,7 +1903,7 @@ $('#btn-ics').addEventListener('click', () => {
     });
 
   visiveis
-    .filter((p) => p.data_prevista && p.status !== 'Entregue' && !FORA_DO_FLUXO.includes(p.status))
+    .filter((p) => p.data_prevista && !ENTREGUES.includes(p.status) && !FORA_DO_FLUXO.includes(p.status))
     .forEach((p) => {
       eventos.push({ id: p.id, data: p.data_prevista, titulo: `Entrega: ${p.nome}`,
                      onde: p.proximo_passo || '' });
@@ -1986,7 +2169,7 @@ $('#f-status').addEventListener('change', (e) => {
   const status = e.target.value;
   $('#campo-motivo').hidden = !FORA_DO_FLUXO.includes(status);
 
-  if (status === 'Entregue') {
+  if (ENTREGUES.includes(status)) {
     $('#f-progresso').value = 100;
     $('#out-progresso').textContent = '100%';
     $('#f-etapa').value = ETAPA_ENTREGUE;
@@ -1995,6 +2178,44 @@ $('#f-status').addEventListener('change', (e) => {
     setTimeout(() => $('#f-motivo-parada').focus(), 60);
   }
 });
+
+$('#form-projeto').addEventListener('blur', (e) => {
+  if (e.target.matches?.('[data-formato]')) formatarCampoNumero(e.target);
+  mostrarGanho();
+}, true);
+
+$('#form-projeto').addEventListener('input', (e) => {
+  if (e.target.matches?.('[data-formato]')) mostrarGanho();
+});
+
+// O número que a conta produz, à vista, antes de salvar.
+function mostrarGanho() {
+  const h = numBR($('#f-horas_mes').value);
+  const t = numBR($('#f-custo_hora').value);
+  const g = ganhoAnual(h, t);
+  const el = $('#calc-ganho');
+
+  if (g !== null) {
+    el.className = 'calculado tem';
+    el.innerHTML = `Ganho anual: <b>${fmtReal(g)}</b>/ano`
+      + `<small>${fmtNum(h, 1)} h/mês × ${fmtReal2(t)}/hora × 12 meses</small>`;
+    return;
+  }
+
+  // Projeto antigo: tem valor anual digitado à mão, mas não dá para
+  // recalcular. Mostrar o valor deixa claro que ele continua valendo.
+  const p = estado.projetos.find((x) => x.id === estado.editando);
+  if (p && Number(p.custo_ano)) {
+    el.className = 'calculado antigo';
+    el.innerHTML = `Ganho anual: <b>${fmtReal(p.custo_ano)}</b>/ano`
+      + '<small>valor antigo, digitado à mão — continua valendo. Informe as horas'
+      + ' e o custo da hora para o sistema passar a calcular sozinho.</small>';
+    return;
+  }
+
+  el.className = 'calculado';
+  el.textContent = 'Informe as horas e o custo da hora para o sistema calcular o ganho.';
+}
 
 $('#form-projeto').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -2019,18 +2240,28 @@ $('#form-projeto').addEventListener('submit', async (e) => {
     programa_id: estado.programaAtivo
       || estado.programas.find((pr) => pr.nome === 'Programa de IA')?.id
       || estado.programas[0]?.id || null,
-    horas_mes: num(f.elements.horas_mes.value),
-    custo_ano: num(f.elements.custo_ano.value),
+    horas_mes: numBR(f.elements.horas_mes.value),
+    custo_hora: numBR(f.elements.custo_hora.value),
     progresso: num(f.elements.progresso.value) || 0,
     proximo_passo: txt(f.elements.proximo_passo.value),
     observacoes: txt(f.elements.observacoes.value),
   };
 
-  // Regras que o status impõe, iguais às do Quadro
+  // O ganho anual não é digitado: é a conta. Quando dá para calcular, o
+  // valor é gravado; quando NÃO dá, custo_ano simplesmente não entra no
+  // update e o que estava lá continua lá.
+  //
+  // Isso não é detalhe: há projeto antigo com valor anual e sem horas
+  // (Gestão de Desempenho, R$ 114 mil). Zerar o campo nesse caso apagaria
+  // um quarto do portfólio só por alguém abrir a ficha e salvar.
   const anterior = estado.projetos.find((x) => x.id === estado.editando);
-  const entregando = campos.status === 'Entregue' && anterior?.status !== 'Entregue';
+  const calculado = ganhoAnual(campos.horas_mes, campos.custo_hora);
+  if (calculado !== null) campos.custo_ano = calculado;
 
-  if (campos.status === 'Entregue') {
+  // Regras que o status impõe, iguais às do Quadro
+  const entregando = ENTREGUES.includes(campos.status) && !ENTREGUES.includes(anterior?.status);
+
+  if (ENTREGUES.includes(campos.status)) {
     campos.progresso = 100;
     campos.etapa = ETAPA_ENTREGUE;
     if (!campos.data_entrega) campos.data_entrega = isoHoje();
@@ -2143,7 +2374,11 @@ $('#btn-excel').addEventListener('click', async () => {
         'Responsável': p.responsavel || '',
         'Solicitante': p.solicitante || '',
         'Horas/mês': p.horas_mes ?? '',
-        'Custo evitado/ano (R$)': p.custo_ano ?? '',
+        'Custo da hora (R$)': p.custo_hora ?? '',
+        'Ganho anual (R$)': p.custo_ano ?? '',
+        [`Capturado em ${HOJE.getFullYear()} (R$)`]:
+          Math.round(capturadoNoAno(p, HOJE.getFullYear(), false) * 100) / 100,
+        'Meses rodando no ano': mesesNoAno(p, HOJE.getFullYear(), false),
         'Início': data(p.data_inicio),
         'Previsão de entrega': data(p.data_prevista),
         'Entregue em': data(p.data_entrega),

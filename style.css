@@ -29,6 +29,10 @@
      projeto saudável com projeto que já saiu */
   --entregue:     #0A6B4F;
   --entregue-luz: #DFF0E8;
+  /* em melhoria: já entregue, por isso fica na família do verde, mas mais
+     clara — é entrega viva, não obra nova */
+  --melhoria:     #12876B;
+  --melhoria-luz: #E4F3EE;
   /* compliance: azul, para não disputar leitura com o semáforo */
   --compliance:     #2B5FA8;
   --compliance-luz: #E5ECF8;
@@ -187,16 +191,66 @@ table{border-collapse:collapse;width:100%}
 .kpi{
   background:var(--branco);border:1px solid var(--linha);border-radius:var(--raio-g);
   padding:16px 18px;position:relative;overflow:hidden;
+  display:block;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;
+  transition:border-color .15s,box-shadow .15s,transform .15s;
 }
+.kpi:hover{border-color:var(--cinza-claro);box-shadow:0 3px 12px rgba(0,0,0,.07);transform:translateY(-1px)}
+.kpi:focus-visible{outline:2px solid var(--amarelo-esc);outline-offset:2px}
+.kpi-ir{
+  display:block;font-size:10.5px;font-weight:700;color:var(--cinza-claro);
+  margin-top:8px;opacity:0;transition:opacity .15s;
+}
+.kpi:hover .kpi-ir,.kpi:focus-visible .kpi-ir{opacity:1}
 .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--linha)}
 .kpi.destaque::before{background:var(--amarelo)}
 .kpi.v::before{background:var(--verde)}
 .kpi.a::before{background:var(--ambar)}
 .kpi.r::before{background:var(--vermelho)}
 .kpi.z::before{background:var(--congelado)}
-.kpi-rot{font-size:10.5px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--cinza)}
-.kpi-num{font-size:27px;font-weight:800;letter-spacing:-.02em;margin-top:5px;line-height:1.1}
-.kpi-pe{font-size:11.5px;color:var(--cinza-claro);margin-top:3px}
+.vb-falta{font-size:11px;color:var(--ambar);font-weight:600;margin-top:4px;line-height:1.35}
+/* o ganho anual não se digita: ele aparece pronto, abaixo dos dois campos
+   que o produzem, para a conta nunca ficar implícita */
+.calculado{
+  margin:0;padding:10px 13px;border-radius:var(--raio);
+  background:var(--neutro-luz);font-size:12px;color:var(--cinza-claro);line-height:1.4;
+}
+.calculado.tem{background:var(--entregue-luz);color:var(--entregue)}
+.calculado.antigo{background:var(--ambar-luz);color:var(--ambar)}
+.calculado b{font-size:14px;font-weight:800}
+.calculado small{display:block;font-size:11px;font-weight:600;opacity:.75;margin-top:2px}
+/* 2026 realizado e 2027 projetado, lado a lado */
+.valor-anos{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-top:14px}
+.ano-bloco{
+  border:1px solid var(--linha);border-radius:var(--raio);padding:12px 14px;background:var(--branco);
+}
+.ano-bloco.proj{border-style:dashed}
+.ano-rot{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--cinza)}
+.ano-num{font-size:19px;font-weight:800;letter-spacing:-.02em;margin-top:4px}
+.ano-pe{font-size:11px;color:var(--cinza-claro);margin-top:2px}
+/* campo com unidade: o R$ e o h/mês ficam dentro da moldura, para o número
+   nunca aparecer solto e virar dúvida de "mil ou cem mil?" */
+.campo-unidade{
+  display:flex;align-items:center;gap:0;
+  border:1px solid var(--linha);border-radius:var(--raio);background:var(--branco);
+  transition:border-color .15s,box-shadow .15s;
+}
+.campo-unidade:focus-within{border-color:var(--amarelo-esc);box-shadow:0 0 0 3px var(--amarelo-luz)}
+.campo-unidade input{
+  border:0 !important;background:transparent !important;box-shadow:none !important;
+  flex:1;min-width:0;text-align:right;font-variant-numeric:tabular-nums;
+}
+.campo-unidade input:focus{outline:none}
+.campo-unidade .unidade{
+  font-size:12px;font-weight:700;color:var(--cinza-claro);
+  padding:0 12px;white-space:nowrap;user-select:none;
+}
+.campo-unidade .unidade.antes{padding-right:0;padding-left:12px;color:var(--cinza)}
+.campo-unidade input:disabled{color:var(--cinza)}
+.campo-unidade:has(input:disabled){background:var(--neutro-luz)}
+.kpi.c::before{background:var(--entregue)}
+.kpi-rot{display:block;font-size:10.5px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--cinza)}
+.kpi-num{display:block;font-size:27px;font-weight:800;letter-spacing:-.02em;margin-top:5px;line-height:1.1}
+.kpi-pe{display:block;font-size:11.5px;color:var(--cinza-claro);margin-top:3px}
 
 /* =================================================== VALOR DO PROGRAMA */
 .painel.valor{margin-bottom:16px;border-left:4px solid var(--amarelo)}
@@ -313,6 +367,11 @@ table{border-collapse:collapse;width:100%}
 .kcol{background:var(--neutro-luz);border-radius:var(--raio-g);padding:12px;
   transition:background .15s,outline-color .15s;outline:2px dashed transparent;outline-offset:-4px}
 .kcol.alvo{background:var(--amarelo-luz);outline-color:var(--amarelo-esc)}
+.kcol.focada,.kparados.focada{animation:achei 1.2s ease-in-out 2}
+@keyframes achei{
+  0%,100%{box-shadow:0 0 0 0 rgba(255,210,0,0)}
+  50%{box-shadow:0 0 0 5px rgba(255,210,0,.6)}
+}
 .kcol-cab{display:flex;align-items:center;gap:8px;padding:2px 4px 12px}
 .kcol-cab h4{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--grafite)}
 .kcol-cab .cont{font-size:10.5px;font-weight:800;color:var(--cinza);
@@ -342,6 +401,7 @@ table{border-collapse:collapse;width:100%}
 .kcard.r::before{background:var(--vermelho)}
 .kcard.n::before{background:var(--neutro)}
 .kcard.c::before{background:var(--entregue)}
+.kcard.m::before{background:var(--melhoria)}
 
 /* a coluna Entregue é a zona do que já saiu: fundo verde claro */
 .kcol[data-etapa="Entregue"]{background:var(--entregue-luz)}
@@ -387,6 +447,8 @@ table{border-collapse:collapse;width:100%}
 .pill.n{background:var(--neutro-luz);color:var(--neutro)}
 .pill.c{background:var(--entregue-luz);color:var(--entregue)}
 .pill.c::before{content:"✓";font-weight:900}
+.pill.m{background:var(--melhoria-luz);color:var(--melhoria)}
+.pill.m::before{content:"↻";font-weight:900;margin-right:2px}
 
 .progresso{height:6px;background:var(--neutro-luz);border-radius:4px;overflow:hidden}
 .progresso span{display:block;height:100%;background:var(--preto);border-radius:4px;transition:width .3s}
@@ -461,6 +523,7 @@ table{border-collapse:collapse;width:100%}
 .gantt-barra.r{background:var(--vermelho)}
 .gantt-barra.n{background:var(--neutro)}
 .gantt-barra.c{background:var(--entregue)}
+.gantt-barra.m{background:var(--melhoria)}
 .gantt-hoje{position:absolute;top:0;bottom:0;width:2px;background:var(--amarelo);z-index:3}
 /* o rótulo aparece só na primeira linha; a faixa amarela segue por todas */
 .gantt-hoje.com-rotulo::after{
