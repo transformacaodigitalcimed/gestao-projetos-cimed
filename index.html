@@ -20,7 +20,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- O ?v= força o navegador a buscar a versão nova em vez da guardada em cache.
      SEMPRE que alterar style.css ou app.js, some 1 nos dois números abaixo. -->
-<link rel="stylesheet" href="style.css?v=21">
+<link rel="stylesheet" href="style.css?v=22">
 </head>
 <body>
 
@@ -123,6 +123,7 @@
           </div>
           <div class="valor-total" id="valor-total"></div>
         </div>
+        <div class="valor-tipos" id="valor-tipos"></div>
         <div class="valor-barra" id="valor-barra"></div>
         <div class="valor-blocos" id="valor-blocos"></div>
         <div class="valor-anos" id="valor-anos"></div>
@@ -383,6 +384,19 @@
       </div>
 
       <div class="campo largo">
+        <label for="f-custo_direto_ano">
+          Custo direto evitado por ano
+          <span class="dica">licença, contrato ou serviço que deixa de ser pago</span>
+        </label>
+        <div class="campo-unidade">
+          <span class="unidade antes">R$</span>
+          <input id="f-custo_direto_ano" name="custo_direto_ano" type="text" inputmode="decimal"
+                 autocomplete="off" placeholder="0,00" data-formato="moeda">
+          <span class="unidade">/ano</span>
+        </div>
+      </div>
+
+      <div class="campo largo">
         <label for="f-progresso">Progresso <output id="out-progresso">0%</output></label>
         <input id="f-progresso" name="progresso" type="range" min="0" max="100" step="5" value="0">
       </div>
@@ -496,6 +510,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="app.js?v=21"></script>
+<script type="module" src="app.js?v=22"></script>
 </body>
 </html>

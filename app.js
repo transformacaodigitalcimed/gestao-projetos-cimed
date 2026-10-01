@@ -207,6 +207,15 @@ function numBR(v) {
 const ganhoAnual = (horas, taxa) =>
   (Number(horas) > 0 && Number(taxa) > 0) ? Number(horas) * Number(taxa) * 12 : null;
 
+// Dois tipos de ganho, somados no total e separados quando importa:
+//   porHoras  = capacidade liberada (vira dinheiro se houver realocação)
+//   direto    = caixa que para de sair (licença, contrato encerrado)
+// A diretoria pergunta justamente essa diferença, e somar numa coluna só
+// fazia o painel prometer caixa onde havia capacidade.
+const porHoras   = (p) => Number(p.custo_ano || 0);
+const custoDireto = (p) => Number(p.custo_direto_ano || 0);
+const valorAno   = (p) => porHoras(p) + custoDireto(p);
+
 // Quantos meses o projeto roda DENTRO de um ano. Entregar em outubro não
 // economiza doze meses em 2026: economiza três. Sem isso o painel conta
 // como capturado um dinheiro que o ano ainda não viu.
@@ -226,7 +235,7 @@ function mesesNoAno(p, ano, projetar) {
 }
 
 const capturadoNoAno = (p, ano, projetar) =>
-  Number(p.custo_ano || 0) * mesesNoAno(p, ano, projetar) / 12;
+  valorAno(p) * mesesNoAno(p, ano, projetar) / 12;
 
 const somar = (ps, fn) => ps.reduce((s, p) => s + fn(p), 0);
 
@@ -806,12 +815,12 @@ function renderValor(ps) {
   ];
 
   faixas.forEach((f) => {
-    f.rs = f.itens.reduce((s, p) => s + Number(p.custo_ano || 0), 0);
+    f.rs = f.itens.reduce((s, p) => s + valorAno(p), 0);
     f.hs = f.itens.reduce((s, p) => s + Number(p.horas_mes || 0), 0);
     // Projeto sem horas e sem custo entra na contagem mas não soma nada.
     // Entregar um desses mexe o "6" e não mexe o R$ — e aí parece que o
     // painel travou. Dizer quantos são tira o mistério.
-    f.semValor = f.itens.filter((p) => !Number(p.custo_ano) && !Number(p.horas_mes)).length;
+    f.semValor = f.itens.filter((p) => !valorAno(p) && !Number(p.horas_mes)).length;
   });
 
   const total = faixas.reduce((s, f) => s + f.rs, 0) || 1;
@@ -829,6 +838,16 @@ function renderValor(ps) {
     <span class="valor-num">${fmtReal(realizado)}</span>
     <span class="valor-rot">capturado em ${ANO}
       · de ${fmtReal(feito)}/ano já no ar</span>`;
+
+  // Caixa e capacidade são ganhos de naturezas diferentes. Mostrar os dois
+  // evita prometer dinheiro onde o que existe é hora liberada.
+  const caixa = somar(ps, (p) => custoDireto(p));
+  const horas = somar(ps, (p) => porHoras(p));
+  $('#valor-tipos').innerHTML = caixa ? `
+    <span class="vt caixa"><b>${fmtReal(caixa)}</b>/ano em custo direto
+      <small>licenças e contratos que deixam de ser pagos</small></span>
+    <span class="vt cap"><b>${fmtReal(horas)}</b>/ano em horas liberadas
+      <small>capacidade devolvida ao time</small></span>` : '';
 
   $('#valor-anos').innerHTML = `
     <div class="ano-bloco">
@@ -876,7 +895,7 @@ function renderPilares(ps) {
 
   $('#pilares').innerHTML = grupos.map((g) => {
     const horas = g.itens.reduce((s, p) => s + Number(p.horas_mes || 0), 0);
-    const custo = g.itens.reduce((s, p) => s + Number(p.custo_ano || 0), 0);
+    const custo = g.itens.reduce((s, p) => s + valorAno(p), 0);
 
     // a quebra por fase, na ordem em que a leitura faz sentido
     const fases = [
@@ -1806,12 +1825,13 @@ function abrirProjeto(id, etapaPadrao) {
   };
   ['nome', 'descricao', 'codigo', 'responsavel', 'solicitante', 'etapa', 'status',
    'data_inicio', 'data_prevista', 'data_entrega', 'prioridade', 'horas_mes',
-   'custo_hora', 'progresso', 'proximo_passo', 'motivo_parada', 'observacoes',
-   'pilar'].forEach((campo) => {
+   'custo_hora', 'custo_direto_ano', 'progresso', 'proximo_passo', 'motivo_parada',
+   'observacoes', 'pilar'].forEach((campo) => {
     f.elements[campo].value = vals[campo] ?? '';
   });
   formatarCampoNumero(f.elements.horas_mes);
   formatarCampoNumero(f.elements.custo_hora);
+  formatarCampoNumero(f.elements.custo_direto_ano);
   mostrarGanho();
   $('#out-progresso').textContent = (vals.progresso || 0) + '%';
   $('#campo-motivo').hidden = !FORA_DO_FLUXO.includes(vals.status);
@@ -2205,7 +2225,7 @@ function mostrarGanho() {
   // Projeto antigo: tem valor anual digitado à mão, mas não dá para
   // recalcular. Mostrar o valor deixa claro que ele continua valendo.
   const p = estado.projetos.find((x) => x.id === estado.editando);
-  if (p && Number(p.custo_ano)) {
+  if (p && porHoras(p)) {
     el.className = 'calculado antigo';
     el.innerHTML = `Ganho anual: <b>${fmtReal(p.custo_ano)}</b>/ano`
       + '<small>valor antigo, digitado à mão — continua valendo. Informe as horas'
@@ -2242,6 +2262,7 @@ $('#form-projeto').addEventListener('submit', async (e) => {
       || estado.programas[0]?.id || null,
     horas_mes: numBR(f.elements.horas_mes.value),
     custo_hora: numBR(f.elements.custo_hora.value),
+    custo_direto_ano: numBR(f.elements.custo_direto_ano.value),
     progresso: num(f.elements.progresso.value) || 0,
     proximo_passo: txt(f.elements.proximo_passo.value),
     observacoes: txt(f.elements.observacoes.value),
@@ -2375,7 +2396,9 @@ $('#btn-excel').addEventListener('click', async () => {
         'Solicitante': p.solicitante || '',
         'Horas/mês': p.horas_mes ?? '',
         'Custo da hora (R$)': p.custo_hora ?? '',
-        'Ganho anual (R$)': p.custo_ano ?? '',
+        'Ganho por horas (R$/ano)': p.custo_ano ?? '',
+        'Custo direto evitado (R$/ano)': p.custo_direto_ano ?? '',
+        'Ganho anual total (R$)': valorAno(p) || '',
         [`Capturado em ${HOJE.getFullYear()} (R$)`]:
           Math.round(capturadoNoAno(p, HOJE.getFullYear(), false) * 100) / 100,
         'Meses rodando no ano': mesesNoAno(p, HOJE.getFullYear(), false),

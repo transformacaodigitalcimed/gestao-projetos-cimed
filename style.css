@@ -219,6 +219,15 @@ table{border-collapse:collapse;width:100%}
 .calculado b{font-size:14px;font-weight:800}
 .calculado small{display:block;font-size:11px;font-weight:600;opacity:.75;margin-top:2px}
 /* 2026 realizado e 2027 projetado, lado a lado */
+/* caixa × capacidade: a distinção que a diretoria pergunta */
+.valor-tipos{display:flex;flex-wrap:wrap;gap:10px 26px;margin:2px 0 14px}
+.valor-tipos:empty{display:none}
+.vt{font-size:12px;color:var(--cinza);padding-left:11px;position:relative;line-height:1.35}
+.vt::before{content:"";position:absolute;left:0;top:3px;bottom:3px;width:3px;border-radius:2px}
+.vt.caixa::before{background:var(--entregue)}
+.vt.cap::before{background:var(--amarelo-esc)}
+.vt b{font-size:14px;font-weight:800;color:var(--grafite)}
+.vt small{display:block;font-size:11px;color:var(--cinza-claro)}
 .valor-anos{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-top:14px}
 .ano-bloco{
   border:1px solid var(--linha);border-radius:var(--raio);padding:12px 14px;background:var(--branco);
