@@ -311,6 +311,13 @@ function toast(msg, erro = false) {
 // =====================================================================
 const MENCIONAVEIS = [...new Set(Object.values(PESSOAS).map((p) => p.nome))];
 
+// Responsável é sempre alguém do time de transformação: lista fechada.
+// Quem executa o trabalho manual que será eliminado vai em "executante",
+// que é campo livre — pode ser pessoa, dupla ou área inteira.
+const TIME = [...new Set(Object.values(PESSOAS)
+  .filter((p) => p.papel === 'gestao').map((p) => p.nome))]
+  .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
 const escapaRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // devolve os nomes marcados num texto
@@ -725,12 +732,31 @@ function irPara(view) {
 // A lista suspensa de Responsável e Solicitante: quem já é responsável por
 // algum projeto, mais todo mundo com login. Continua aceitando nome novo.
 function montarListaPessoas() {
-  const nomes = [...new Set([
-    ...MENCIONAVEIS,
-    ...estado.projetos.map((p) => p.responsavel).filter(Boolean),
-    ...estado.projetos.map((p) => p.solicitante).filter(Boolean),
-  ])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  $('#lista-pessoas').innerHTML = nomes.map((n) => `<option value="${esc(n)}"></option>`).join('');
+  const ordenar = (a, b) => a.localeCompare(b, 'pt-BR');
+  const opcoes = (ns) => ns.map((n) => `<option value="${esc(n)}"></option>`).join('');
+
+  // menções e responsáveis de tarefa: o time inteiro
+  $('#lista-pessoas').innerHTML = opcoes([...new Set([...MENCIONAVEIS])].sort(ordenar));
+
+  // solicitante: cresce sozinho com quem já foi cadastrado
+  $('#lista-solicitantes').innerHTML = opcoes(
+    [...new Set(estado.projetos.map((p) => p.solicitante).filter(Boolean))].sort(ordenar));
+
+  // quem executa: idem, mais os responsáveis antigos que vieram de lá
+  $('#lista-executantes').innerHTML = opcoes([...new Set([
+    ...estado.projetos.map((p) => p.executante).filter(Boolean),
+    ...estado.projetos.map((p) => p.responsavel).filter((r) => r && !TIME.includes(r)),
+  ])].sort(ordenar));
+}
+
+// A lista fechada tolera o valor antigo do projeto aberto. Sem isso,
+// abrir uma ficha de alguém de fora do time trocaria o responsável em
+// silêncio pelo primeiro nome da lista.
+function montarResponsaveis(atual) {
+  const fora = atual && !TIME.includes(atual);
+  $('#f-responsavel').innerHTML = '<option value="">Sem responsável</option>'
+    + TIME.map((n) => `<option${n === atual ? ' selected' : ''}>${esc(n)}</option>`).join('')
+    + (fora ? `<option selected value="${esc(atual)}">${esc(atual)} — fora do time</option>` : '');
 }
 
 function renderTudo() {
@@ -1187,7 +1213,8 @@ function cardKanban(p) {
         ${selectCompliance(p, 'kcard-compliance')}`}
       ${parado && p.motivo_parada
         ? `<p class="kcard-motivo">${textoComMencoes(p.motivo_parada)}</p>`
-        : p.proximo_passo ? `<p class="kcard-passo">→ ${textoComMencoes(p.proximo_passo)}</p>` : ''}
+        : (p.proximo_passo && p.etapa !== ETAPA_ENTREGUE)
+          ? `<p class="kcard-passo">→ ${textoComMencoes(p.proximo_passo)}</p>` : ''}
     </article>`;
 }
 
@@ -1900,7 +1927,8 @@ function abrirProjeto(id, etapaPadrao) {
   const vals = p || {
     etapa: etapaPadrao || 'Fila', status: 'Não iniciado', progresso: 0, prioridade: 3,
   };
-  ['nome', 'descricao', 'codigo', 'responsavel', 'solicitante', 'etapa', 'status',
+  montarResponsaveis(vals.responsavel);
+  ['nome', 'descricao', 'codigo', 'responsavel', 'executante', 'solicitante', 'etapa', 'status',
    'data_inicio', 'data_prevista', 'data_entrega', 'prioridade', 'horas_mes',
    'custo_hora', 'custo_direto_ano', 'como_medimos', 'nps', 'progresso', 'proximo_passo',
    'motivo_parada', 'observacoes', 'pilar'].forEach((campo) => {
@@ -2379,6 +2407,7 @@ $('#form-projeto').addEventListener('submit', async (e) => {
     horas_mes: numBR(f.elements.horas_mes.value),
     custo_hora: numBR(f.elements.custo_hora.value),
     custo_direto_ano: numBR(f.elements.custo_direto_ano.value),
+    executante: txt(f.elements.executante.value),
     nps: numBR(f.elements.nps.value),
     sem_ganho_financeiro: f.elements.sem_ganho_financeiro.checked,
     como_medimos: txt(f.elements.como_medimos.value),
@@ -2512,6 +2541,7 @@ $('#btn-excel').addEventListener('click', async () => {
         'Semáforo': RAG[r.k].nome,
         'Situação': r.motivo,
         'Responsável': p.responsavel || '',
+        'Quem executa hoje': p.executante || '',
         'Solicitante': p.solicitante || '',
         'Horas/mês': p.horas_mes ?? '',
         'Custo da hora (R$)': p.custo_hora ?? '',

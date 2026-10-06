@@ -20,7 +20,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- O ?v= força o navegador a buscar a versão nova em vez da guardada em cache.
      SEMPRE que alterar style.css ou app.js, some 1 nos dois números abaixo. -->
-<link rel="stylesheet" href="style.css?v=25">
+<link rel="stylesheet" href="style.css?v=26">
 </head>
 <body>
 
@@ -289,15 +289,15 @@
       </div>
 
       <div class="campo">
-        <label for="f-responsavel">Responsável</label>
-        <input id="f-responsavel" name="responsavel" list="lista-pessoas"
-               autocomplete="off" placeholder="Escolha da lista ou digite">
+        <label for="f-responsavel">Responsável <span class="dica">time de transformação</span></label>
+        <select id="f-responsavel" name="responsavel"></select>
         <datalist id="lista-pessoas"></datalist>
       </div>
       <div class="campo">
         <label for="f-solicitante">Solicitante <span class="dica">quem pediu</span></label>
-        <input id="f-solicitante" name="solicitante" list="lista-pessoas"
+        <input id="f-solicitante" name="solicitante" list="lista-solicitantes"
                autocomplete="off" placeholder="Área, liderança ou pessoa">
+        <datalist id="lista-solicitantes"></datalist>
       </div>
 
       <div class="campo largo" id="campo-pilar" hidden>
@@ -358,6 +358,16 @@
           <option value="4">4 · Baixa</option>
           <option value="5">5 · Backlog</option>
         </select>
+      </div>
+
+      <div class="campo">
+        <label for="f-executante">
+          Quem executa hoje
+          <span class="dica">de quem são as horas que o projeto devolve</span>
+        </label>
+        <input id="f-executante" name="executante" list="lista-executantes"
+               autocomplete="off" placeholder="Pessoa, dupla ou área">
+        <datalist id="lista-executantes"></datalist>
       </div>
 
       <div class="campo">
@@ -544,6 +554,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="app.js?v=25"></script>
+<script type="module" src="app.js?v=26"></script>
 </body>
 </html>
