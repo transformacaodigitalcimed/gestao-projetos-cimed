@@ -894,17 +894,22 @@ function renderValor(ps) {
   const caixa = somar(ps, (p) => custoDireto(p));
   const horas = somar(ps, (p) => porHoras(p));
   const outroCriterio = ps.filter((p) => p.sem_ganho_financeiro).length;
+  const semValor = faixas.reduce((s, f) => s + f.semValor, 0);
   const baseRH = custoEstrutura();
   const pctRH = baseRH ? ((caixa + horas) / baseRH * 100).toFixed(1).replace('.', ',') + '%' : '';
-  $('#valor-tipos').innerHTML = (caixa || outroCriterio) ? `
-    ${caixa ? `<span class="vt caixa"><b>${fmtReal(caixa)}</b>/ano em custo direto
-      <small>licenças e contratos que deixam de ser pagos</small></span>` : ''}
+  $('#valor-tipos').innerHTML = caixa ? `
+    <span class="vt caixa"><b>${fmtReal(caixa)}</b>/ano em custo direto
+      <small>licenças e contratos que deixam de ser pagos</small></span>
     <span class="vt cap"><b>${fmtReal(horas)}</b>/ano em horas liberadas
       <small>${fmtNum(hcEquivalente(somar(ps, (p) => Number(p.horas_mes || 0))), 2)} pessoas
-        em tempo integral${pctRH ? ` · ${pctRH} do custo de RH` : ''}</small></span>
-    ${outroCriterio ? `<span class="vt outro"><b>${outroCriterio}</b>
-      frente${outroCriterio > 1 ? 's' : ''} sem ganho financeiro
-      <small>medida${outroCriterio > 1 ? 's' : ''} por adoção e alcance, não por R$</small></span>` : ''}` : '';
+        em tempo integral${pctRH ? ` · ${pctRH} do custo de RH` : ''}</small></span>` : '';
+
+  // Tudo que está FORA da conta do dinheiro, numa frase só, no rodapé.
+  const fora = [];
+  if (semValor) fora.push(`<b>${semValor}</b> ainda sem valor informado`);
+  if (outroCriterio) fora.push(`<b>${outroCriterio}</b> sem ganho financeiro por decisão`);
+  $('#valor-rodape').innerHTML = fora.length
+    ? 'Fora desta conta: ' + fora.join(' · ') : '';
 
   $('#valor-anos').innerHTML = `
     <div class="ano-bloco">
@@ -930,8 +935,6 @@ function renderValor(ps) {
         <div class="vb-rot">${esc(f.rot)} <b>${f.itens.length}</b></div>
         <div class="vb-num">${fmtReal(f.rs)}<small>/ano</small></div>
         <div class="vb-pe">${f.hs ? fmtNum(f.hs, 1) + ' h/mês · ' : ''}${esc(f.desc)}</div>
-        ${f.semValor ? `<div class="vb-falta">${f.semValor} projeto${f.semValor > 1 ? 's' : ''} sem
-          horas nem custo informados — não entra${f.semValor > 1 ? 'm' : ''} nesta conta</div>` : ''}
       </div>
     </div>`).join('');
 }

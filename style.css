@@ -207,7 +207,13 @@ table{border-collapse:collapse;width:100%}
 .kpi.a::before{background:var(--ambar)}
 .kpi.r::before{background:var(--vermelho)}
 .kpi.z::before{background:var(--congelado)}
-.vb-falta{font-size:11px;color:var(--ambar);font-weight:600;margin-top:4px;line-height:1.35}
+/* o que não entra na conta do dinheiro: uma frase, no pé do bloco */
+.valor-rodape{
+  margin:12px 0 0;padding-top:11px;border-top:1px solid var(--linha);
+  font-size:11.5px;color:var(--cinza-claro);line-height:1.45;
+}
+.valor-rodape:empty{display:none}
+.valor-rodape b{color:var(--ambar);font-weight:800}
 /* o ganho anual não se digita: ele aparece pronto, abaixo dos dois campos
    que o produzem, para a conta nunca ficar implícita */
 .calculado{
@@ -263,7 +269,7 @@ table{border-collapse:collapse;width:100%}
 .vt small{display:block;font-size:11px;color:var(--cinza-claro)}
 .valor-anos{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-top:14px}
 .ano-bloco{
-  border:1px solid var(--linha);border-radius:var(--raio);padding:12px 14px;background:var(--branco);
+  border:1px solid var(--linha);border-radius:var(--raio);padding:10px 13px;background:var(--branco);
 }
 .ano-bloco.proj{border-style:dashed}
 .ano-rot{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--cinza)}
