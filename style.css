@@ -468,6 +468,8 @@ table{border-collapse:collapse;width:100%}
   border:1px solid var(--linha);border-radius:7px;background:var(--fundo);cursor:pointer;
 }
 .kcard-status:hover{border-color:var(--cinza-claro);background:var(--branco)}
+.kcard-status optgroup{font-size:10.5px;font-weight:800;color:var(--cinza-claro)}
+.kcard-status option{font-weight:600;color:var(--grafite)}
 .kcard-status:focus{outline:2px solid var(--amarelo);outline-offset:-1px}
 
 .kcard-prog{display:flex;align-items:center;gap:7px}

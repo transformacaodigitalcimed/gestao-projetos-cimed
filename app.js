@@ -68,6 +68,24 @@ const ENTREGUES = ['Entregue', 'Em melhoria'];
 // A lista do banco pode ter status antigo que saiu daqui (ex.: 'Em ajustes',
 // hoje 'Em homologação'). Mostrar o valor real evita que abrir a ficha de um
 // projeto troque o status dele sem ninguém pedir.
+const FAMILIAS_STATUS = [
+  ['Em andamento',  ['Não iniciado', 'Em mapeamento', 'Em construção', 'Em homologação']],
+  ['Concluído',     ['Entregue', 'Em melhoria']],
+  ['Fora do fluxo', ['Congelado', 'Cancelado', 'Descontinuado']],
+];
+
+// As opções agrupadas, respeitando status antigo que já saiu da lista:
+// ele vira um grupo "Outros" em vez de sumir e trocar o valor sozinho.
+function opcoesStatus(atual) {
+  const conhecidos = FAMILIAS_STATUS.flatMap(([, ss]) => ss);
+  const extras = statusDisponiveis().filter((s) => !conhecidos.includes(s));
+  const grupos = extras.length ? [...FAMILIAS_STATUS, ['Outros', extras]] : FAMILIAS_STATUS;
+
+  return grupos.map(([rot, ss]) => `<optgroup label="${rot}">`
+    + ss.map((s) => `<option${s === atual ? ' selected' : ''}>${esc(s)}</option>`).join('')
+    + '</optgroup>').join('');
+}
+
 function statusDisponiveis() {
   const extras = [...new Set(estado.projetos.map((p) => p.status).filter(Boolean))]
     .filter((v) => !STATUS.includes(v))
@@ -1198,11 +1216,15 @@ function cardKanban(p) {
       </div>
       ${linhaDinheiro(p)}
       ${dono ? `
-        <select class="kcard-etapa" data-etapa-sel="${p.id}" title="Mover para outra etapa">
-          ${ETAPAS.map((et) => `<option${et === p.etapa ? ' selected' : ''}>${esc(et)}</option>`).join('')}
+        <select class="kcard-etapa" data-etapa-sel="${p.id}" title="Mover para outra coluna">
+          ${ETAPAS.filter((et) => et !== ETAPA_ENTREGUE && et !== ETAPA_PARADA)
+             .map((et) => `<option${et === p.etapa ? ' selected' : ''}>${esc(et)}</option>`).join('')}
+          ${[ETAPA_ENTREGUE, ETAPA_PARADA].includes(p.etapa)
+             ? `<option selected>${esc(p.etapa)}</option>` : ''}
         </select>
-        <select class="kcard-status" data-status="${p.id}" title="Mudar o status">
-          ${statusDisponiveis().map((s) => `<option${s === p.status ? ' selected' : ''}>${esc(s)}</option>`).join('')}
+        <select class="kcard-status" data-status="${p.id}"
+                title="Mudar o status — entregar ou congelar move o card de coluna">
+          ${opcoesStatus(p.status)}
         </select>
         ${parado ? '' : `
         <div class="kcard-prog">
@@ -1379,6 +1401,9 @@ function ligarQuadro() {
   });
 }
 
+const primeiraEtapaDeFluxo = () =>
+  ETAPAS.find((et) => et !== ETAPA_ENTREGUE && et !== ETAPA_PARADA) || ETAPAS[0];
+
 // Soltar na coluna "Entregue" é dizer que o projeto saiu — então o card
 // passa a 100%, ganha data de entrega e o semáforo acompanha. Tirar de lá
 // desfaz isso, senão ele ficaria verde para sempre.
@@ -1428,7 +1453,7 @@ function camposParaStatus(p, status) {
 
   } else {
     if (ENTREGUES.includes(p.status)) campos.data_entrega = null;
-    if (p.etapa === ETAPA_ENTREGUE || p.etapa === ETAPA_PARADA) campos.etapa = 'Prioritário';
+    if (p.etapa === ETAPA_ENTREGUE || p.etapa === ETAPA_PARADA) campos.etapa = primeiraEtapaDeFluxo();
     if (FORA_DO_FLUXO.includes(p.status)) campos.motivo_parada = null;
   }
   return campos;
@@ -1909,7 +1934,7 @@ $('#btn-marcar-lido').addEventListener('click', async () => {
 // =====================================================================
 function montarSelects() {
   $('#f-etapa').innerHTML = ETAPAS.map((v) => `<option>${esc(v)}</option>`).join('');
-  $('#f-status').innerHTML = statusDisponiveis().map((v) => `<option>${esc(v)}</option>`).join('');
+  $('#f-status').innerHTML = opcoesStatus('');
 
   // o campo de pilar só existe onde o programa define pilares
   $('#campo-pilar').hidden = !PILARES.length;
@@ -2176,9 +2201,6 @@ $('#lista-tarefas').addEventListener('change', async (e) => {
     await carregarTudo();
     renderTarefas(proj);
 
-    // todas concluídas: a comemoração é merecida
-    const agora = tarefasDe(proj);
-    if (agora.length && agora.every((t) => t.feita)) soltarConfete();
     return;
   }
 
@@ -2307,6 +2329,9 @@ $('#f-status').addEventListener('change', (e) => {
   } else if (FORA_DO_FLUXO.includes(status)) {
     $('#f-etapa').value = ETAPA_PARADA;
     setTimeout(() => $('#f-motivo-parada').focus(), 60);
+  } else if ([ETAPA_ENTREGUE, ETAPA_PARADA].includes($('#f-etapa').value)) {
+    // voltou ao trabalho: a coluna acompanha, e você vê isso antes de salvar
+    $('#f-etapa').value = primeiraEtapaDeFluxo();
   }
 });
 
@@ -2440,6 +2465,13 @@ $('#form-projeto').addEventListener('submit', async (e) => {
   } else if (FORA_DO_FLUXO.includes(campos.status)) {
     campos.etapa = ETAPA_PARADA;
     campos.data_entrega = null;
+  } else if ([ETAPA_ENTREGUE, ETAPA_PARADA].includes(campos.etapa)) {
+    // Mesma regra do Quadro: o status manda na coluna. Sem isto, trocar
+    // "Entregue" por "Em construção" na ficha deixava o card na coluna de
+    // entregues — status dizendo uma coisa, coluna dizendo outra.
+    campos.etapa = primeiraEtapaDeFluxo();
+    campos.data_entrega = null;
+    if (FORA_DO_FLUXO.includes(anterior?.status)) campos.motivo_parada = null;
   }
 
   const ehNovo = !estado.editando;
