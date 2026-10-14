@@ -9,7 +9,7 @@
 // vez de mostrar um número velho como se fosse o de agora.
 // =====================================================================
 
-const VERSAO = 'cimed-projetos-v29';
+const VERSAO = 'cimed-projetos-v30';
 
 const CASCA = [
   './',

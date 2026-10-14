@@ -223,6 +223,10 @@ table{border-collapse:collapse;width:100%}
 .calculado.tem{background:var(--entregue-luz);color:var(--entregue)}
 .calculado.antigo{background:var(--ambar-luz);color:var(--ambar)}
 .calculado.outro{background:var(--compliance-luz);color:var(--compliance);font-weight:700}
+/* progresso que vem das tarefas: mostrado, não editável */
+.campo.travado input[type=range]{opacity:.55;cursor:not-allowed}
+.campo.travado label{color:var(--cinza)}
+.campo.travado #rot-progresso{font-weight:700}
 .porano{display:flex;gap:22px;flex-wrap:wrap;margin-top:9px;padding-top:9px;
   border-top:1px solid rgba(10,107,79,.18)}
 .porano b{font-size:14px;font-weight:800;display:block}

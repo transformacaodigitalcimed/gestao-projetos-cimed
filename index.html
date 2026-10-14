@@ -20,7 +20,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- O ?v= força o navegador a buscar a versão nova em vez da guardada em cache.
      SEMPRE que alterar style.css ou app.js, some 1 nos dois números abaixo. -->
-<link rel="stylesheet" href="style.css?v=29">
+<link rel="stylesheet" href="style.css?v=30">
 </head>
 <body>
 
@@ -442,7 +442,8 @@
       </div>
 
       <div class="campo largo">
-        <label for="f-progresso">Progresso <output id="out-progresso">0%</output></label>
+        <label for="f-progresso"><span id="rot-progresso">Progresso</span>
+          <output id="out-progresso">0%</output></label>
         <input id="f-progresso" name="progresso" type="range" min="0" max="100" step="5" value="0">
       </div>
 
@@ -555,6 +556,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="app.js?v=29"></script>
+<script type="module" src="app.js?v=30"></script>
 </body>
 </html>

@@ -1970,6 +1970,9 @@ function abrirProjeto(id, etapaPadrao) {
   $('#campo-medimos').hidden = !vals.sem_ganho_financeiro;
   mostrarGanho();
   $('#out-progresso').textContent = (vals.progresso || 0) + '%';
+  $('#f-progresso').disabled = false;
+  $('#f-progresso').closest('.campo')?.classList.remove('travado');
+  $('#rot-progresso').textContent = 'Progresso';
   $('#campo-motivo').hidden = !FORA_DO_FLUXO.includes(vals.status);
 
   // comentários do projeto
@@ -2007,6 +2010,14 @@ function abrirProjeto(id, etapaPadrao) {
   [...$('#form-projeto').elements].forEach((el) => {
     if (el.type !== 'submit' && el.type !== 'button') el.disabled = !dono;
   });
+
+  // A trava acima reabilita o formulário inteiro, inclusive o progresso.
+  // Com tarefas, esse campo não é editável por ninguém: quem manda nele é
+  // o gatilho do banco. Por isso a regra vem DEPOIS, não antes.
+  if (p && tarefasDe(p.id).length) {
+    $('#f-progresso').disabled = true;
+    $('#f-progresso').closest('.campo')?.classList.add('travado');
+  }
   $('#btn-excluir').hidden = !p || !dono;
   $('#btn-salvar-projeto').hidden = !dono;
   $('#aviso-somente-leitura').hidden = dono;
@@ -2154,6 +2165,14 @@ function renderTarefas(projetoId) {
       </li>`;
   }).join('')
     : '<li class="vazio">Nenhuma tarefa. Quebre o projeto em passos para acompanhar de perto.</li>';
+
+  // quem manda no progresso: as tarefas, quando existem
+  const prog = $('#f-progresso');
+  prog.disabled = lista.length > 0 || !dono;
+  prog.closest('.campo')?.classList.toggle('travado', lista.length > 0);
+  $('#rot-progresso').textContent = lista.length
+    ? `Progresso · calculado por ${feitas} de ${lista.length} tarefas`
+    : 'Progresso';
 
   $('#form-tarefa').hidden = !dono;
   $('#linha-modelo').hidden = !dono || !estado.modelos.length;
@@ -2452,6 +2471,12 @@ $('#form-projeto').addEventListener('submit', async (e) => {
   // (Gestão de Desempenho, R$ 114 mil). Zerar o campo nesse caso apagaria
   // um quarto do portfólio só por alguém abrir a ficha e salvar.
   const anterior = estado.projetos.find((x) => x.id === estado.editando);
+
+  // Projeto com tarefas: o progresso vem do gatilho do banco. Não mandar
+  // o campo é o que impede a ficha de desfazer a conta ao salvar.
+  // A regra de entrega, logo abaixo, ainda pode forçar 100.
+  if (estado.editando && tarefasDe(estado.editando).length) delete campos.progresso;
+
   const calculado = ganhoAnual(campos.horas_mes, campos.custo_hora);
   if (calculado !== null) campos.custo_ano = calculado;
 
