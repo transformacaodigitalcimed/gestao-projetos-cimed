@@ -20,7 +20,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- O ?v= força o navegador a buscar a versão nova em vez da guardada em cache.
      SEMPRE que alterar style.css ou app.js, some 1 nos dois números abaixo. -->
-<link rel="stylesheet" href="style.css?v=35">
+<link rel="stylesheet" href="style.css?v=39">
 </head>
 <body>
 
@@ -176,17 +176,15 @@
 
       <!-- o número que a diretoria pergunta: quanto já virou resultado -->
       <div class="painel valor">
-        <div class="valor-cab">
-          <div>
-            <h3>Valor do programa</h3>
-            <p class="dica-bloco">O que o ano já capturou, e quanto o portfólio vale por ano.</p>
-          </div>
-          <div class="valor-total" id="valor-total"></div>
-        </div>
-        <div class="valor-tipos" id="valor-tipos"></div>
-        <div class="valor-barra" id="valor-barra"></div>
-        <div class="valor-blocos" id="valor-blocos"></div>
-        <div class="valor-anos" id="valor-anos"></div>
+        <h3>Valor do programa</h3>
+        <p class="dica-bloco">O que o ano já capturou, e quanto o portfólio vale por ano.</p>
+        <div class="faixa-corrigir" id="faixa-corrigir" hidden></div>
+        <div class="lista-corrigir" id="lista-corrigir" hidden></div>
+        <div class="valor-topo" id="valor-topo"></div>
+        <div class="valor-barra" id="valor-barra"
+             title="Proporção entre o que já foi entregue, o que está em construção e o que está na fila"></div>
+        <div class="valor-tabela" id="valor-tabela"></div>
+        <p class="valor-pe" id="valor-pe"></p>
         <p class="valor-rodape" id="valor-rodape"></p>
       </div>
 
@@ -617,6 +615,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="app.js?v=35"></script>
+<script type="module" src="app.js?v=39"></script>
 </body>
 </html>

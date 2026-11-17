@@ -17,7 +17,8 @@ const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 //
 // ETAPAS deixou de ser fixo — ele é recalculado quando o programa muda.
 // =====================================================================
-let ETAPAS = ['Prioritário', 'Protótipo e ajustes', 'Fila', 'Entregue', 'Congelado / Cancelado'];
+let ETAPAS = ['Prioridade', 'Protótipo e ajustes', 'Fila de produção',
+              'Entregue', 'Congelado / Cancelado'];
 let PILARES = [];   // [{ nome, curto, cor }] — vazio esconde o campo
 const pilarDe = (nome) => PILARES.find((p) => p.nome === nome);
 let ETAPA_PARADA = 'Congelado / Cancelado';
@@ -118,6 +119,11 @@ const RAG = {
   x: { nome: 'Cancelado', cls: 'x', cor: 'var(--cancelado)' },
 };
 const ORDEM_RAG = ['r', 'a', 'v', 's', 'c', 'm', 'z', 'x'];
+
+// O painel de valor separa o que já roda, o que está sendo feito e o que
+// nem começou. Essa divisão sai do STATUS, nunca do nome da coluna:
+// renomear "Fila" para "Fila de produção" já zerou a faixa uma vez.
+const NAO_INICIADO = 'Não iniciado';
 
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
@@ -972,6 +978,7 @@ function renderVisao() {
         </li>`).join('')
     : '<li class="vazio">Nenhum projeto em risco de prazo. Tudo dentro do combinado.</li>';
 
+  renderCorrigir(ps);
   renderQuadro();
 }
 
@@ -987,10 +994,10 @@ function renderValor(ps) {
     { k: 'andando', rot: 'Em construção', cor: 'var(--amarelo-esc)',
       desc: 'a caminho, com data marcada',
       itens: ps.filter((p) => !ENTREGUES.includes(p.status) && !FORA_DO_FLUXO.includes(p.status)
-                              && p.etapa !== 'Fila') },
+                              && p.status !== NAO_INICIADO) },
     { k: 'fila', rot: 'Na fila', cor: 'var(--cinza-claro)',
       desc: 'potencial ainda não iniciado',
-      itens: ps.filter((p) => p.etapa === 'Fila' && !FORA_DO_FLUXO.includes(p.status)) },
+      itens: ps.filter((p) => p.status === NAO_INICIADO) },
   ];
 
   faixas.forEach((f) => {
@@ -1016,59 +1023,192 @@ function renderValor(ps) {
   const previsto  = somar(ps, (p) => capturadoNoAno(p, ANO, true));
   const proximo   = somar(ps, (p) => capturadoNoAno(p, ANO + 1, true));
 
-  $('#valor-total').innerHTML = `
-    <span class="valor-num">${fmtReal(realizado)}</span>
-    <span class="valor-rot">capturado em ${ANO}
-      · de ${fmtReal(feito)}/ano já no ar</span>`;
+  // Os tres numeros do ano, lado a lado e na mesma escala: o capturado
+  // manda, os dois seguintes apoiam. Sem manchete gigante, a pedido dela.
+  $('#valor-topo').innerHTML = `
+    <div class="vk">
+      <div class="vk-rot">Capturado em ${ANO}</div>
+      <div class="vk-num">${fmtReal(realizado)}</div>
+      <div class="vk-pe">de ${fmtReal(feito)} por ano já rodando</div>
+    </div>
+    <div class="vk fraco">
+      <div class="vk-rot">Previsão de fechar ${ANO}</div>
+      <div class="vk-num">${fmtReal(previsto)}</div>
+      <div class="vk-pe">se tudo que tem data entregar no prazo</div>
+    </div>
+    <div class="vk fraco">
+      <div class="vk-rot">Projetado para ${ANO + 1}</div>
+      <div class="vk-num">${fmtReal(proximo)}</div>
+      <div class="vk-pe">ano cheio de tudo que estiver rodando</div>
+    </div>`;
 
   // Caixa e capacidade são ganhos de naturezas diferentes. Mostrar os dois
   // evita prometer dinheiro onde o que existe é hora liberada.
-  const caixa = somar(ps, (p) => custoDireto(p));
-  const horas = somar(ps, (p) => porHoras(p));
+  // Projeto congelado ou cancelado nao libera hora nenhuma. Ele estava
+  // entrando aqui: dos R$ 518.963 que o painel mostrava em "horas
+  // liberadas", R$ 114.186 vinham de 4 projetos fora do fluxo. Conferido
+  // no banco em 17/11/2026.
+  const vivos = ps.filter((x) => !FORA_DO_FLUXO.includes(x.status));
+  const caixa = somar(vivos, (p) => custoDireto(p));
+  const horas = somar(vivos, (p) => porHoras(p));
   const outroCriterio = ps.filter((p) => p.sem_ganho_financeiro).length;
-  const semValor = faixas.reduce((s, f) => s + f.semValor, 0);
   const baseRH = custoEstrutura();
   const pctRH = baseRH ? ((caixa + horas) / baseRH * 100).toFixed(1).replace('.', ',') + '%' : '';
-  $('#valor-tipos').innerHTML = caixa ? `
-    <span class="vt caixa"><b>${fmtReal(caixa)}</b>/ano em custo direto
-      <small>licenças e contratos que deixam de ser pagos</small></span>
-    <span class="vt cap"><b>${fmtReal(horas)}</b>/ano em horas liberadas
-      <small>${fmtNum(hcEquivalente(somar(ps, (p) => Number(p.horas_mes || 0))), 2)} pessoas
-        em tempo integral${pctRH ? ` · ${pctRH} do custo de RH` : ''}</small></span>` : '';
+  // Caixa e capacidade explicam a composição, não competem com a tabela:
+  // por isso descem para o rodapé, numa linha só.
+  $('#valor-pe').innerHTML = caixa ? `
+    <span><b>${fmtReal(caixa)}</b> por ano em custo direto,
+      licenças e contratos que deixam de ser pagos</span>
+    <span><b>${fmtReal(horas)}</b> por ano em horas liberadas,
+      ${fmtNum(hcEquivalente(somar(vivos, (p) => Number(p.horas_mes || 0))), 2)} pessoas
+      em tempo integral${pctRH ? `, ${pctRH} do custo de RH` : ''}</span>` : '';
 
   // Tudo que está FORA da conta do dinheiro, numa frase só, no rodapé.
-  const fora = [];
-  if (semValor) fora.push(`<b>${semValor}</b> ainda sem valor informado`);
-  if (outroCriterio) fora.push(`<b>${outroCriterio}</b> sem ganho financeiro por decisão`);
-  $('#valor-rodape').innerHTML = fora.length
-    ? 'Fora desta conta: ' + fora.join(' · ') : '';
-
-  $('#valor-anos').innerHTML = `
-    <div class="ano-bloco">
-      <div class="ano-rot">Previsão de fechar ${ANO}</div>
-      <div class="ano-num">${fmtReal(previsto)}</div>
-      <div class="ano-pe">se tudo que tem data entregar no prazo</div>
-    </div>
-    <div class="ano-bloco proj">
-      <div class="ano-rot">Projetado para ${ANO + 1}</div>
-      <div class="ano-num">${fmtReal(proximo)}</div>
-      <div class="ano-pe">ano cheio de tudo que estiver rodando</div>
-    </div>`;
+  // "sem valor informado" saiu daqui: virou a faixa de corrigir, que além
+  // de contar leva ao campo. Aqui fica só o que é decisão registrada, e
+  // portanto não é pendência de ninguém.
+  $('#valor-rodape').innerHTML = outroCriterio
+    ? `Fora desta conta: <b>${outroCriterio}</b> ${outroCriterio > 1
+        ? 'projetos marcados como sem ganho financeiro' : 'projeto marcado como sem ganho financeiro'}, por decisão` : '';
 
   $('#valor-barra').innerHTML = faixas
     .filter((f) => f.rs)
     .map((f) => `<span style="width:${(f.rs / total) * 100}%;background:${f.cor}"
                        title="${esc(f.rot)}: ${fmtReal(f.rs)}"></span>`).join('');
 
-  $('#valor-blocos').innerHTML = faixas.map((f) => `
-    <div class="valor-bloco">
-      <span class="vb-marca" style="background:${f.cor}"></span>
-      <div>
-        <div class="vb-rot">${esc(f.rot)} <b>${f.itens.length}</b></div>
-        <div class="vb-num">${fmtReal(f.rs)}<small>/ano</small></div>
-        <div class="vb-pe">${f.hs ? fmtNum(f.hs, 1) + ' h/mês · ' : ''}${esc(f.desc)}</div>
+  // Tabela: as três fases na mesma coluna, para comparar de um olhar.
+  // O "/ano" vira cabeçalho e para de se repetir em cada bloco.
+  const soma = (campo) => faixas.reduce((s, f) => s + f[campo], 0);
+  $('#valor-tabela').innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Fase</th>
+          <th scope="col">Projetos</th>
+          <th scope="col">Valor por ano</th>
+          <th scope="col" class="col-h">Horas por mês</th>
+          <th scope="col" class="col-s">Sem valor</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${faixas.map((f) => `
+        <tr>
+          <th scope="row" class="vt-fase" title="${esc(f.desc)}">
+            <i style="background:${f.cor}"></i>${esc(f.rot)}
+          </th>
+          <td>${f.itens.length}</td>
+          <td class="vt-val">${fmtReal(f.rs)}</td>
+          <td class="col-h">${f.hs ? fmtNum(f.hs, 1) : '0,0'}</td>
+          <td class="col-s vt-mudo">${f.semValor || ''}</td>
+        </tr>`).join('')}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th scope="row" class="vt-fase">Portfólio</th>
+          <td>${faixas.reduce((s, f) => s + f.itens.length, 0)}</td>
+          <td class="vt-val">${fmtReal(soma('rs'))}</td>
+          <td class="col-h">${fmtNum(soma('hs'), 1)}</td>
+          <td class="col-s vt-mudo">${soma('semValor') || ''}</td>
+        </tr>
+      </tfoot>
+    </table>`;
+}
+
+// ------------------------------------------------- DADO A CORRIGIR
+// A faixa do Painel de Vagas, aqui. Cada pendência diz qual número ela
+// desloca e leva direto ao campo, com ele em destaque por um instante.
+//
+// Projeto fora do fluxo não entra: congelado sem data prevista não é
+// dado faltando, é projeto parado.
+function pendenciasDe(p) {
+  if (FORA_DO_FLUXO.includes(p.status)) return [];
+  const faltas = [];
+  const num = (v) => Number(v || 0);
+
+  if (!p.sem_ganho_financeiro
+      && !num(p.horas_mes) && !num(p.custo_direto_ano) && !num(p.custo_ano)) {
+    faltas.push({ campo: 'horas_mes', texto: 'sem valor informado',
+                  afeta: 'não entra em nenhum R$ do painel' });
+  } else {
+    if (num(p.horas_mes) && !num(p.custo_hora)) {
+      faltas.push({ campo: 'custo_hora', texto: 'horas sem o custo da hora',
+                    afeta: 'as horas não viram R$' });
+    }
+    if (num(p.custo_hora) && !num(p.horas_mes)) {
+      faltas.push({ campo: 'horas_mes', texto: 'custo da hora sem as horas',
+                    afeta: 'as horas não viram R$' });
+    }
+  }
+
+  if (ENTREGUES.includes(p.status) && !p.data_entrega) {
+    faltas.push({ campo: 'data_entrega', texto: 'entregue sem data de entrega',
+                  afeta: 'fica fora do capturado no ano' });
+  }
+  if (!ENTREGUES.includes(p.status) && !p.data_prevista) {
+    faltas.push({ campo: 'data_prevista', texto: 'sem data prevista',
+                  afeta: 'sem semáforo e fora da previsão do ano' });
+  }
+  if (PILARES.length && !p.pilar) {
+    faltas.push({ campo: 'pilar', texto: 'sem pilar',
+                  afeta: 'não aparece em Frentes por pilar' });
+  }
+  return faltas;
+}
+
+function renderCorrigir(ps) {
+  const comFalta = ps.map((p) => ({ p, faltas: pendenciasDe(p) }))
+                     .filter((x) => x.faltas.length)
+                     .sort((a, b) => b.faltas.length - a.faltas.length
+                                     || a.p.nome.localeCompare(b.p.nome));
+
+  const faixa = $('#faixa-corrigir');
+  const lista = $('#lista-corrigir');
+
+  faixa.hidden = !comFalta.length;
+  if (!comFalta.length) { lista.hidden = true; lista.innerHTML = ''; return; }
+
+  const n = comFalta.length;
+  const aberta = !lista.hidden;
+  faixa.innerHTML = `
+    <span class="fc-ponto"></span>
+    <span class="fc-txt">${n} projeto${n > 1 ? 's têm' : ' tem'} dado a corrigir
+      e afeta${n > 1 ? 'm' : ''} os números</span>
+    <button type="button" class="fc-btn" id="btn-corrigir" aria-expanded="${aberta}">
+      ${aberta ? 'Fechar' : 'Ver e corrigir'}
+    </button>`;
+
+  lista.innerHTML = comFalta.map(({ p, faltas }) => `
+    <div class="lc-item">
+      <b class="lc-nome" data-abrir="${p.id}">${esc(p.nome)}</b>
+      <div class="lc-faltas">
+        ${faltas.map((f) => `
+          <button type="button" class="lc-falta" data-abrir="${p.id}" data-focar="${f.campo}"
+                  title="${esc(f.afeta)}">${esc(f.texto)}</button>`).join('')}
       </div>
     </div>`).join('');
+}
+
+$('#faixa-corrigir').addEventListener('click', (e) => {
+  if (!e.target.closest('#btn-corrigir')) return;
+  const lista = $('#lista-corrigir');
+  lista.hidden = !lista.hidden;
+  const btn = $('#btn-corrigir');
+  btn.textContent = lista.hidden ? 'Ver e corrigir' : 'Fechar';
+  btn.setAttribute('aria-expanded', String(!lista.hidden));
+});
+
+// Abriu a ficha por uma pendência: leva o campo para a tela e pisca nele.
+// Sem isso a pessoa cai numa ficha longa e procura o que estava faltando.
+function destacarCampo(nome) {
+  const campo = $('#f-' + nome);
+  if (!campo) return;
+  const caixa = campo.closest('.campo') || campo;
+  setTimeout(() => {
+    caixa.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    caixa.classList.add('piscando');
+    if (!campo.disabled) campo.focus({ preventScroll: true });
+    setTimeout(() => caixa.classList.remove('piscando'), 2200);
+  }, 120);
 }
 
 // --------------------------------------------------- FRENTES POR PILAR
@@ -1311,14 +1451,16 @@ function cardKanban(p) {
     <article class="kcard ${RAG[r.k].cls}${estado.destacar === p.id ? ' novinho' : ''}${pl ? ' com-pilar' : ''}"
              ${pl ? `style="--pcor:${pl.cor}" title="Pilar: ${esc(pl.nome)}"` : ''}
              data-id="${p.id}" data-abrir="${p.id}">
+      <div class="kcard-cab">
+        <h5>${esc(p.nome)}</h5>
+        ${dono ? `<button class="kexcluir" data-excluir="${p.id}" title="Excluir projeto">×</button>` : ''}
+      </div>
       <div class="kcard-topo">
         <span class="ksit ${RAG[r.k].cls}" title="${esc(r.motivo)}">${
           ['v', 'c'].includes(r.k) ? esc(r.motivo) : RAG[r.k].nome}</span>
         ${dono && ck === 'sim' ? '<span class="kcomp sim">Compliance</span>' : ''}
         ${desacordo(p) ? `<span class="kdesacordo" title="${esc(desacordo(p))}">fora de lugar</span>` : ''}
-        ${dono ? `<button class="kexcluir" data-excluir="${p.id}" title="Excluir projeto">×</button>` : ''}
       </div>
-      <h5>${esc(p.nome)}</h5>
       <div class="kcard-meta">
         <span>${esc(p.responsavel || 'sem responsável')}</span>
         ${p.horas_mes ? `<span>${fmtNum(p.horas_mes, 1)} h/mês</span>` : ''}
@@ -1349,12 +1491,12 @@ function cardKanban(p) {
           <button class="kbtn" data-prog="${p.id}" data-delta="10" title="Aumentar 10%">+</button>
         </div>`}`
       : `
-        <div class="kcard-estado">${esc(p.status)}${parado ? '' : ' · ' + p.progresso + '%'}</div>
+        <div class="kcard-estado">${esc(p.status)}${parado ? '' : ', ' + p.progresso + '%'}</div>
         ${selectCompliance(p, 'kcard-compliance')}`}
       ${parado && p.motivo_parada
         ? `<p class="kcard-motivo">${textoComMencoes(p.motivo_parada)}</p>`
         : (p.proximo_passo && p.etapa !== ETAPA_ENTREGUE)
-          ? `<p class="kcard-passo">→ ${textoComMencoes(p.proximo_passo)}</p>` : ''}
+          ? `<p class="kcard-passo">${textoComMencoes(p.proximo_passo)}</p>` : ''}
     </article>`;
 }
 
@@ -2062,7 +2204,7 @@ function abrirProjeto(id, etapaPadrao) {
 
   const f = $('#form-projeto');
   const vals = p || {
-    etapa: etapaPadrao || 'Fila', status: 'Não iniciado', progresso: 0, prioridade: 3,
+    etapa: etapaPadrao || ETAPAS[0], status: NAO_INICIADO, progresso: 0, prioridade: 3,
   };
   montarResponsaveis(vals.responsavel);
   ['nome', 'descricao', 'codigo', 'responsavel', 'executante', 'solicitante', 'etapa', 'status',
@@ -2247,8 +2389,9 @@ function renderTarefas(projetoId) {
   const feitas = lista.filter((t) => t.feita).length;
 
   $('#tarefas-resumo').textContent = lista.length
-    ? `${feitas} de ${lista.length} concluídas · o progresso do projeto vem daqui`
-    : 'nenhuma ainda — o progresso segue no controle manual';
+    ? `${feitas} de ${lista.length} concluídas, o progresso do projeto vem daqui`
+      + (dono && lista.length > 1 ? '. Arraste pela alça para mudar a ordem' : '')
+    : 'nenhuma ainda, o progresso segue no controle manual';
 
   $('#lista-tarefas').innerHTML = lista.length ? lista.map((t) => {
     const pai = t.depende_de ? lista.find((x) => x.id === t.depende_de) : null;
@@ -2256,7 +2399,9 @@ function renderTarefas(projetoId) {
     const atrasada = !t.feita && t.prazo && paraData(t.prazo) < HOJE;
 
     return `
-      <li class="${t.feita ? 'feita' : ''}${travada ? ' travada' : ''}">
+      <li class="${t.feita ? 'feita' : ''}${travada ? ' travada' : ''}" data-tid="${t.id}">
+        ${dono ? `<span class="tarefa-alca" data-alca title="Arraste para mudar a ordem"
+                        aria-hidden="true">⠿</span>` : ''}
         <input type="checkbox" class="tarefa-check" data-tarefa="${t.id}"
                ${t.feita ? 'checked' : ''} ${!dono || travada ? 'disabled' : ''}
                title="${travada ? 'Depende de: ' + esc(pai.titulo) : 'Marcar como concluída'}">
@@ -2318,6 +2463,73 @@ $('#form-tarefa').addEventListener('submit', async (e) => {
   await carregarTudo();
   renderTarefas(id);
 });
+
+(function ligarArrastarTarefas() {
+  const ul = $('#lista-tarefas');
+  let mexeu = false;
+
+  ul.addEventListener('pointerdown', (e) => {
+    if (!podeEditar() || (e.button ?? 0) !== 0) return;
+    if (!e.target.closest('[data-alca]')) return;
+
+    const li = e.target.closest('li[data-tid]');
+    if (!li || ul.querySelectorAll('li[data-tid]').length < 2) return;
+
+    e.preventDefault();
+    mexeu = false;
+    li.classList.add('arrastando');
+    document.body.classList.add('arrastando-algo');
+
+    const limpar = () => {
+      document.removeEventListener('pointermove', mover);
+      document.removeEventListener('pointerup', largar);
+      document.removeEventListener('pointercancel', limpar);
+      li.classList.remove('arrastando');
+      document.body.classList.remove('arrastando-algo');
+    };
+
+    const mover = (ev) => {
+      ev.preventDefault();
+      // o item sob o dedo, ignorando o que está sendo arrastado
+      const alvo = [...ul.querySelectorAll('li[data-tid]')].find((o) => {
+        if (o === li) return false;
+        const r = o.getBoundingClientRect();
+        return ev.clientY >= r.top && ev.clientY <= r.bottom;
+      });
+      if (!alvo) return;
+
+      const r = alvo.getBoundingClientRect();
+      const acima = ev.clientY < r.top + r.height / 2;
+      alvo.parentNode.insertBefore(li, acima ? alvo : alvo.nextSibling);
+      mexeu = true;
+    };
+
+    const largar = async () => {
+      limpar();
+      if (!mexeu) return;
+
+      const projeto = estado.editando;
+      const ids = [...ul.querySelectorAll('li[data-tid]')].map((o) => o.dataset.tid);
+
+      // Uma chamada só: a função do banco grava a lista inteira. Oito
+      // updates soltos deixariam a ordem embaralhada se um falhasse.
+      const { error } = await sb.rpc('reordenar_tarefas',
+        { p_projeto: projeto, p_ids: ids });
+      if (error) {
+        toast('Não consegui salvar a ordem: ' + error.message, true);
+        renderTarefas(projeto);      // volta ao que o banco tem
+        return;
+      }
+      await carregarTudo();
+      renderTarefas(projeto);
+      toast('Ordem das tarefas salva');
+    };
+
+    document.addEventListener('pointermove', mover, { passive: false });
+    document.addEventListener('pointerup', largar);
+    document.addEventListener('pointercancel', limpar);
+  });
+})();
 
 $('#lista-tarefas').addEventListener('change', async (e) => {
   const chk = e.target.closest('[data-tarefa]');
@@ -3047,7 +3259,11 @@ document.addEventListener('click', (e) => {
   if (e.target.closest('[data-fechar]')) return fecharModal();
 
   const alvo = e.target.closest('[data-abrir]');
-  if (alvo) { abrirProjeto(alvo.dataset.abrir); return; }
+  if (alvo) {
+    abrirProjeto(alvo.dataset.abrir);
+    if (alvo.dataset.focar) destacarCampo(alvo.dataset.focar);
+    return;
+  }
 
 });
 
