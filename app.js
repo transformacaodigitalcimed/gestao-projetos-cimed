@@ -1312,11 +1312,11 @@ function cardKanban(p) {
              ${pl ? `style="--pcor:${pl.cor}" title="Pilar: ${esc(pl.nome)}"` : ''}
              data-id="${p.id}" data-abrir="${p.id}">
       <div class="kcard-topo">
-        ${['v', 'c'].includes(r.k)
-          ? `<span class="kquieto">${esc(r.motivo)}</span>`
-          : `<span class="pill ${RAG[r.k].cls}" title="${esc(r.motivo)}">${RAG[r.k].nome}</span>`}
+        <span class="ksit ${RAG[r.k].cls}" title="${esc(r.motivo)}">${
+          ['v', 'c'].includes(r.k) ? esc(r.motivo) : RAG[r.k].nome}</span>
         ${dono && ck === 'sim' ? '<span class="kcomp sim">Compliance</span>' : ''}
         ${desacordo(p) ? `<span class="kdesacordo" title="${esc(desacordo(p))}">fora de lugar</span>` : ''}
+        ${dono ? `<button class="kexcluir" data-excluir="${p.id}" title="Excluir projeto">×</button>` : ''}
       </div>
       <h5>${esc(p.nome)}</h5>
       <div class="kcard-meta">
@@ -1502,6 +1502,14 @@ function ligarQuadro() {
     if (novo) {
       e.stopPropagation();
       abrirProjeto(null, novo.dataset.novaEtapa);
+      return;
+    }
+
+    // excluir pelo card
+    const x = e.target.closest('[data-excluir]');
+    if (x) {
+      e.stopPropagation();
+      excluirProjeto(estado.projetos.find((p) => p.id === x.dataset.excluir));
       return;
     }
 
@@ -2722,8 +2730,7 @@ $('#form-projeto').addEventListener('submit', async (e) => {
   }
 });
 
-$('#btn-excluir').addEventListener('click', async () => {
-  const p = estado.projetos.find((x) => x.id === estado.editando);
+async function excluirProjeto(p) {
   if (!p) return;
 
   // diz o que vai junto antes de perguntar
@@ -2744,10 +2751,13 @@ $('#btn-excluir').addEventListener('click', async () => {
   if (!ok) return;
   const { error } = await sb.from('projetos').delete().eq('id', p.id);
   if (error) return toast('Erro ao excluir: ' + error.message, true);
-  fecharModal();
+  if (estado.editando === p.id) fecharModal();
   await carregarTudo();
   toast('Projeto excluído');
-});
+}
+
+$('#btn-excluir').addEventListener('click', () =>
+  excluirProjeto(estado.projetos.find((x) => x.id === estado.editando)));
 
 $('#form-comentario').addEventListener('submit', async (e) => {
   e.preventDefault();

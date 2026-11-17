@@ -1082,3 +1082,66 @@ body.arrastando-algo{cursor:grabbing;user-select:none}
   .view-head h2{font-size:19px}
   .barra-filtros select{flex:1 1 140px;min-width:0}
 }
+
+
+/* =====================================================================
+   PROPOSTA A · executivo sóbrio (escolhida em 17/11/2026)
+
+   A cor sai das áreas grandes e fica só onde significa: o fio de 3px na
+   lateral do card. Pastilha arredondada vira texto em caixa alta, a
+   coluna de entregues perde o fundo verde, e os números ganham fonte
+   tabular para alinharem como em relatório.
+   ===================================================================== */
+
+/* colunas: sem fundo, separadas por um fio */
+.kcol{background:transparent;border-radius:0;padding:0 10px 0 0}
+.kcol + .kcol{border-left:1px solid var(--linha);padding-left:14px}
+.kcol-cab{border-bottom:1px solid var(--linha);padding:0 2px 9px;margin-bottom:12px}
+.kcol-cab h4{font-weight:700;letter-spacing:.13em;color:var(--grafite)}
+.kcol-cab .cont{background:transparent;color:var(--cinza-claro);padding:0;font-weight:700}
+.kcol-horas{font-variant-numeric:tabular-nums}
+
+/* a de entregues deixa de ser verde e deixa de ter o sinal de visto */
+.kcol[data-etapa="Entregue"]{background:transparent}
+.kcol[data-etapa="Entregue"] .kcol-cab h4{color:var(--grafite)}
+.kcol[data-etapa="Entregue"] .kcol-cab h4::before{content:none}
+.kcol[data-etapa="Entregue"] .progresso span{background:var(--grafite)}
+.kcol.alvo{background:var(--amarelo-luz);outline-color:var(--amarelo-esc)}
+
+/* card: canto quase reto, borda fina, respiro */
+.kcard{border-radius:5px;padding:13px 14px 13px 16px}
+
+/* situação em texto, não em pastilha */
+.ksit{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--cinza-claro);cursor:help}
+.ksit.r{color:var(--vermelho)}
+.ksit.a{color:var(--ambar)}
+.ksit.c,.ksit.m{color:var(--entregue)}
+.ksit.z{color:var(--congelado)}
+.ksit.x{color:var(--cancelado)}
+
+/* compliance e os avisos acompanham: texto, não bolha */
+.kcard .kcomp.sim{background:transparent;color:var(--compliance);padding:0;
+  font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.kdesacordo{background:transparent;padding:0;letter-spacing:.08em}
+
+/* números alinhados, como em relatório */
+.kcard-meta,.kdinheiro,.kprog-num,.kd-ano,.kd-cheio{font-variant-numeric:tabular-nums}
+
+/* progresso: um fio, sem bolha */
+.progresso{height:2px;background:var(--linha);border-radius:0}
+.progresso span{background:var(--grafite);border-radius:0}
+.kprog-num{color:var(--cinza-claro);font-weight:600}
+
+/* o x de excluir: só no hover, e vermelho só quando a mão está nele */
+.kexcluir{
+  margin-left:auto;border:0;background:transparent;cursor:pointer;
+  font-size:17px;line-height:1;padding:0 2px;color:var(--cinza-claro);
+  opacity:0;transition:opacity .13s,color .13s;
+}
+.kcard:hover .kexcluir{opacity:1}
+.kexcluir:hover{color:var(--vermelho)}
+.kexcluir:focus-visible{opacity:1;outline:2px solid var(--vermelho);outline-offset:2px;border-radius:3px}
+
+/* em tela de toque não há hover: o x fica sempre visível, porém discreto */
+@media (hover:none){ .kexcluir{opacity:.5} }
