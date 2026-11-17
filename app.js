@@ -1308,6 +1308,7 @@ function cardKanban(p) {
           ? `<span class="kquieto">${esc(r.motivo)}</span>`
           : `<span class="pill ${RAG[r.k].cls}" title="${esc(r.motivo)}">${RAG[r.k].nome}</span>`}
         ${dono && ck === 'sim' ? '<span class="kcomp sim">Compliance</span>' : ''}
+        ${desacordo(p) ? `<span class="kdesacordo" title="${esc(desacordo(p))}">fora de lugar</span>` : ''}
       </div>
       <h5>${esc(p.nome)}</h5>
       <div class="kcard-meta">
@@ -1517,30 +1518,9 @@ const isoHoje = () =>
   `${HOJE.getFullYear()}-${String(HOJE.getMonth() + 1).padStart(2, '0')}-${String(HOJE.getDate()).padStart(2, '0')}`;
 
 function camposParaEtapa(p, etapa) {
-  const campos = { etapa };
-
-  if (etapa === ETAPA_ENTREGUE && p.etapa !== ETAPA_ENTREGUE) {
-    // quem já estava "Em melhoria" continua em melhoria: arrastar para a
-    // coluna de entregues não pode rebaixar o status de volta.
-    if (!ENTREGUES.includes(p.status)) campos.status = 'Entregue';
-    campos.progresso = 100;
-    if (!p.data_entrega) campos.data_entrega = isoHoje();
-
-  } else if (etapa === ETAPA_PARADA && p.etapa !== ETAPA_PARADA) {
-    // entrou na coluna de parados: congelado é o padrão, cancelar é decisão
-    if (!FORA_DO_FLUXO.includes(p.status)) campos.status = 'Congelado';
-    campos.data_entrega = null;
-
-  } else if (etapa !== ETAPA_ENTREGUE && p.etapa === ETAPA_ENTREGUE) {
-    campos.data_entrega = null;
-    if (ENTREGUES.includes(p.status)) campos.status = 'Em construção';
-
-  } else if (etapa !== ETAPA_PARADA && p.etapa === ETAPA_PARADA) {
-    // voltou ao fluxo: sai do congelamento e o motivo deixa de valer
-    if (FORA_DO_FLUXO.includes(p.status)) campos.status = 'Em construção';
-    campos.motivo_parada = null;
-  }
-  return campos;
+  // Arrastar move o card de coluna e nada mais. Quem diz em que pé o
+  // projeto está é o status, e ele é escolhido à mão.
+  return { etapa };
 }
 
 // O status manda na coluna, não o contrário: marcar "Entregue" move o
@@ -1548,21 +1528,28 @@ function camposParaEtapa(p, etapa) {
 function camposParaStatus(p, status) {
   const campos = { status };
 
+  // O status não mexe mais na coluna. Mexe só no que é dele: a data em
+  // que a entrega aconteceu, que é de onde sai o "Capturado no ano", e o
+  // progresso quando não há tarefas mandando nele.
   if (ENTREGUES.includes(status)) {
-    campos.progresso = 100;
-    campos.etapa = ETAPA_ENTREGUE;
+    if (!tarefasDe(p.id).length) campos.progresso = 100;
     if (!p.data_entrega) campos.data_entrega = isoHoje();
-
-  } else if (FORA_DO_FLUXO.includes(status)) {
-    campos.etapa = ETAPA_PARADA;
-    campos.data_entrega = null;
-
-  } else {
-    if (ENTREGUES.includes(p.status)) campos.data_entrega = null;
-    if (p.etapa === ETAPA_ENTREGUE || p.etapa === ETAPA_PARADA) campos.etapa = primeiraEtapaDeFluxo();
-    if (FORA_DO_FLUXO.includes(p.status)) campos.motivo_parada = null;
   }
   return campos;
+}
+
+// Status e coluna passaram a ser independentes em 17/11/2026. Quando os
+// dois discordam o card avisa: foi a discordância silenciosa que fez a
+// Avaliação de Desempenho parecer entregue em outubro.
+function desacordo(p) {
+  const entregue = ENTREGUES.includes(p.status);
+  const parado   = FORA_DO_FLUXO.includes(p.status);
+
+  if (entregue && p.etapa !== ETAPA_ENTREGUE) return 'entregue, fora da coluna de entregues';
+  if (!entregue && p.etapa === ETAPA_ENTREGUE) return 'na coluna de entregues sem status de entrega';
+  if (parado && p.etapa !== ETAPA_PARADA) return 'fora do fluxo, mas ainda no quadro';
+  if (!parado && p.etapa === ETAPA_PARADA) return 'em andamento, mas na faixa de parados';
+  return '';
 }
 
 // Aplica a mudança na tela na hora e só depois grava. Se o banco recusar,
@@ -2125,7 +2112,12 @@ function abrirProjeto(id, etapaPadrao) {
     $('#f-progresso').closest('.campo')?.classList.add('travado');
   }
   $('#btn-excluir').hidden = !p || !dono;
-  $('#btn-salvar-projeto').hidden = !dono;
+  $('#btn-salvar-projeto').hidden = !dono || !!p;   // editar grava sozinho
+  avisoFicha('');
+  // guarda o texto de abertura: as menções são enfileiradas uma vez só,
+  // ao fechar, e não a cada tecla digitada
+  estado.textoAoAbrir = [p?.proximo_passo, p?.descricao, p?.observacoes]
+    .filter(Boolean).join(' ');
   $('#aviso-somente-leitura').hidden = dono;
   // sem permissão de editar, nada de microfone: o campo está travado
   $$('[data-ditar]').forEach((b) => { b.hidden = !dono || !Reconhecimento; });
@@ -2432,8 +2424,21 @@ function fmtTamanho(bytes) {
 
 function fecharModal() {
   pararDitado();                 // não deixa o microfone ligado depois de fechar
+
+  // Com gravação automática, enfileirar menção a cada tecla mandaria um
+  // aviso por letra. Vai uma vez, na saída, e só se o texto mudou.
+  const id = estado.editando;
+  if (id) {
+    const p = estado.projetos.find((x) => x.id === id);
+    const agora = [p?.proximo_passo, p?.descricao, p?.observacoes].filter(Boolean).join(' ');
+    if (agora && agora !== estado.textoAoAbrir) enfileirarMencoes(agora, id, 'projeto');
+  }
+
+  clearTimeout(tempoGravar);
+  avisoFicha('');
   $('#modal').hidden = true;
   estado.editando = null;
+  estado.textoAoAbrir = '';
   document.body.style.overflow = '';
 }
 
@@ -2447,16 +2452,12 @@ $('#f-status').addEventListener('change', (e) => {
   const status = e.target.value;
   $('#campo-motivo').hidden = !FORA_DO_FLUXO.includes(status);
 
-  if (ENTREGUES.includes(status)) {
+  // A coluna é escolha separada: trocar o status não mexe nela.
+  if (ENTREGUES.includes(status) && !$('#f-progresso').disabled) {
     $('#f-progresso').value = 100;
     $('#out-progresso').textContent = '100%';
-    $('#f-etapa').value = ETAPA_ENTREGUE;
   } else if (FORA_DO_FLUXO.includes(status)) {
-    $('#f-etapa').value = ETAPA_PARADA;
     setTimeout(() => $('#f-motivo-parada').focus(), 60);
-  } else if ([ETAPA_ENTREGUE, ETAPA_PARADA].includes($('#f-etapa').value)) {
-    // voltou ao trabalho: a coluna acompanha, e você vê isso antes de salvar
-    $('#f-etapa').value = primeiraEtapaDeFluxo();
   }
 });
 
@@ -2534,11 +2535,11 @@ function mostrarGanho() {
   el.textContent = 'Informe as horas e o custo da hora para o sistema calcular o ganho.';
 }
 
-$('#form-projeto').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const f = e.target;
+function camposDaFicha() {
+  const f = $('#form-projeto');
   const num = (v) => (v === '' ? null : Number(v));
   const txt = (v) => (v.trim() === '' ? null : v.trim());
+  const anterior = estado.projetos.find((x) => x.id === estado.editando);
 
   const campos = {
     nome: f.elements.nome.value.trim(),
@@ -2554,9 +2555,14 @@ $('#form-projeto').addEventListener('submit', async (e) => {
     data_entrega: f.elements.data_entrega.value || null,
     prioridade: num(f.elements.prioridade.value) || 3,
     pilar: txt(f.elements.pilar.value),
-    programa_id: estado.programaAtivo
-      || estado.programas.find((pr) => pr.nome === 'Programa de IA')?.id
-      || estado.programas[0]?.id || null,
+    // Projeto que já existe NUNCA troca de programa aqui: sem esta linha,
+    // editar um projeto da Jornada com "Todos os programas" selecionado o
+    // jogaria para o Programa de IA sem ninguém pedir.
+    programa_id: estado.editando
+      ? (anterior?.programa_id ?? null)
+      : (estado.programaAtivo
+         || estado.programas.find((pr) => pr.nome === 'Programa de IA')?.id
+         || estado.programas[0]?.id || null),
     horas_mes: numBR(f.elements.horas_mes.value),
     custo_hora: numBR(f.elements.custo_hora.value),
     custo_direto_ano: numBR(f.elements.custo_direto_ano.value),
@@ -2576,35 +2582,107 @@ $('#form-projeto').addEventListener('submit', async (e) => {
   // Isso não é detalhe: há projeto antigo com valor anual e sem horas
   // (Gestão de Desempenho, R$ 114 mil). Zerar o campo nesse caso apagaria
   // um quarto do portfólio só por alguém abrir a ficha e salvar.
-  const anterior = estado.projetos.find((x) => x.id === estado.editando);
 
   // Projeto com tarefas: o progresso vem do gatilho do banco. Não mandar
   // o campo é o que impede a ficha de desfazer a conta ao salvar.
-  // A regra de entrega, logo abaixo, ainda pode forçar 100.
   if (estado.editando && tarefasDe(estado.editando).length) delete campos.progresso;
 
   const calculado = ganhoAnual(campos.horas_mes, campos.custo_hora);
   if (calculado !== null) campos.custo_ano = calculado;
 
-  // Regras que o status impõe, iguais às do Quadro
-  const entregando = ENTREGUES.includes(campos.status) && !ENTREGUES.includes(anterior?.status);
-
+  // A coluna vem do campo Etapa, como ela escolheu. O status só registra
+  // a data da entrega, que é o que alimenta o "Capturado no ano".
   if (ENTREGUES.includes(campos.status)) {
-    campos.progresso = 100;
-    campos.etapa = ETAPA_ENTREGUE;
+    if (campos.progresso !== undefined) campos.progresso = 100;
     if (!campos.data_entrega) campos.data_entrega = isoHoje();
-  } else if (FORA_DO_FLUXO.includes(campos.status)) {
-    campos.etapa = ETAPA_PARADA;
-    campos.data_entrega = null;
-  } else if ([ETAPA_ENTREGUE, ETAPA_PARADA].includes(campos.etapa)) {
-    // Mesma regra do Quadro: o status manda na coluna. Sem isto, trocar
-    // "Entregue" por "Em construção" na ficha deixava o card na coluna de
-    // entregues — status dizendo uma coisa, coluna dizendo outra.
-    campos.etapa = primeiraEtapaDeFluxo();
-    campos.data_entrega = null;
-    if (FORA_DO_FLUXO.includes(anterior?.status)) campos.motivo_parada = null;
   }
 
+  return campos;
+}
+
+// =====================================================================
+// GRAVAÇÃO AUTOMÁTICA DA FICHA
+//
+// A ficha passou a gravar sozinha, como o card já fazia. O botão deixou
+// de ser "Salvar" e virou "Criar projeto": só aparece quando o projeto
+// ainda não existe, porque não há como gravar campo a campo um registro
+// que o banco não conhece.
+//
+// Depois de gravar, a tela é atualizada por renderVisao() e NÃO por
+// renderTudo(): renderTudo remonta as listas de status e etapa, e isso
+// apagaria o que você acabou de escolher com a ficha aberta.
+// =====================================================================
+let gravandoFicha = false;
+let gravarDeNovo = false;
+let tempoGravar = null;
+
+function avisoFicha(texto, erro = false) {
+  const el = $('#ficha-aviso');
+  if (!el) return;
+  el.textContent = texto;
+  el.className = 'ficha-aviso' + (texto ? ' visivel' : '') + (erro ? ' erro' : '');
+}
+
+async function gravarFicha() {
+  if (!estado.editando || !podeEditar()) return;
+
+  const campos = camposDaFicha();
+  if (!campos.nome) return avisoFicha('O nome não pode ficar vazio.', true);
+
+  // Uma gravação por vez. O que chegar no meio vira uma próxima rodada,
+  // senão duas respostas fora de ordem podem gravar o valor antigo.
+  if (gravandoFicha) { gravarDeNovo = true; return; }
+  gravandoFicha = true;
+  avisoFicha('salvando…');
+
+  try {
+    const salvo = await salvarProjeto(estado.editando, campos);
+    const p = estado.projetos.find((x) => x.id === estado.editando);
+    if (p && salvo) Object.assign(p, salvo);
+
+    // Campos que as regras preenchem sozinhas voltam para a tela, senão
+    // marcar "Entregue" grava a data no banco e deixa o campo em branco
+    // na ficha aberta. Campo em foco não é tocado: a pessoa está nele.
+    const f = $('#form-projeto');
+    ['data_entrega', 'progresso'].forEach((nome) => {
+      const el = f.elements[nome];
+      if (!el || el === document.activeElement || salvo?.[nome] === undefined) return;
+      const novo = salvo[nome] === null ? '' : String(salvo[nome]);
+      if (el.value !== novo) el.value = novo;
+    });
+    $('#out-progresso').textContent = (salvo?.progresso ?? 0) + '%';
+
+    renderVisao();
+    mostrarGanho();
+    avisoFicha('salvo');
+    clearTimeout(avisoFicha._t);
+    avisoFicha._t = setTimeout(() => avisoFicha(''), 2000);
+  } catch (err) {
+    avisoFicha('Não salvou: ' + err.message, true);
+  } finally {
+    gravandoFicha = false;
+    if (gravarDeNovo) { gravarDeNovo = false; gravarFicha(); }
+  }
+}
+
+// digitar espera a pessoa parar; escolher em lista grava na hora
+$('#form-projeto').addEventListener('input', (e) => {
+  if (!estado.editando || !e.target.name) return;
+  clearTimeout(tempoGravar);
+  tempoGravar = setTimeout(gravarFicha, 900);
+});
+
+$('#form-projeto').addEventListener('change', (e) => {
+  if (!estado.editando || !e.target.name) return;
+  clearTimeout(tempoGravar);
+  gravarFicha();
+});
+
+$('#form-projeto').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const campos = camposDaFicha();
+  const anterior = estado.projetos.find((x) => x.id === estado.editando);
+  const entregando = ENTREGUES.includes(campos.status) && !ENTREGUES.includes(anterior?.status);
   const ehNovo = !estado.editando;
   const modeloEscolhido = ehNovo ? $('#f-modelo').value : '';
 
