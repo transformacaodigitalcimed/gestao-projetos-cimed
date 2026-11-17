@@ -20,7 +20,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- O ?v= força o navegador a buscar a versão nova em vez da guardada em cache.
      SEMPRE que alterar style.css ou app.js, some 1 nos dois números abaixo. -->
-<link rel="stylesheet" href="style.css?v=30">
+<link rel="stylesheet" href="style.css?v=31">
 </head>
 <body>
 
@@ -50,7 +50,67 @@
       <p id="login-erro" class="erro" hidden></p>
     </form>
 
-    <p class="login-rodape">Acesso restrito · Material confidencial CIMED</p>
+    <button type="button" class="link-discreto" id="btn-esqueci">Esqueci minha senha</button>
+
+    <p class="login-rodape">Acesso restrito. Material confidencial CIMED.</p>
+  </div>
+</div>
+
+<!-- ================================================ RECUPERAR SENHA -->
+<!-- Pede o e-mail e dispara o link do Supabase. A mensagem de sucesso e a
+     mesma exista ou nao a conta: dizer "este e-mail nao esta cadastrado"
+     entrega a lista de quem tem acesso a quem perguntar. -->
+<div id="tela-recuperar" class="login" hidden>
+  <div class="login-card">
+    <svg class="login-logo"><use href="#logo-cimed"></use></svg>
+    <p class="login-eyebrow"><span class="dot"></span> Recuperar acesso</p>
+    <h1>Esqueceu a senha?</h1>
+    <p class="login-sub">
+      Informe o e-mail da sua conta. Se ela existir, você recebe um link para
+      criar uma senha nova. O link vale por uma hora.
+    </p>
+
+    <form id="form-recuperar" autocomplete="on">
+      <label for="rec-email">E-mail</label>
+      <input id="rec-email" type="email" required autocomplete="username"
+             placeholder="nome@grupocimed.com.br">
+
+      <button type="submit" class="btn-primario" id="btn-enviar-link">Enviar link</button>
+      <p id="rec-aviso" class="aviso-ok" hidden></p>
+      <p id="rec-erro" class="erro" hidden></p>
+    </form>
+
+    <button type="button" class="link-discreto" id="btn-voltar-login">Voltar para o login</button>
+    <p class="login-rodape">Acesso restrito. Material confidencial CIMED.</p>
+  </div>
+</div>
+
+<!-- ===================================================== NOVA SENHA -->
+<!-- Aparece quando a pessoa volta pelo link do e-mail. -->
+<div id="tela-nova-senha" class="login" hidden>
+  <div class="login-card">
+    <svg class="login-logo"><use href="#logo-cimed"></use></svg>
+    <p class="login-eyebrow"><span class="dot"></span> Nova senha</p>
+    <h1>Crie a sua senha</h1>
+    <p class="login-sub">
+      Escolha uma senha de pelo menos 8 caracteres. Depois de salvar, você
+      entra no sistema com ela.
+    </p>
+
+    <form id="form-nova-senha" autocomplete="on">
+      <label for="nova-senha">Nova senha</label>
+      <input id="nova-senha" type="password" required minlength="8"
+             autocomplete="new-password" placeholder="pelo menos 8 caracteres">
+
+      <label for="nova-senha-2">Repita a senha</label>
+      <input id="nova-senha-2" type="password" required minlength="8"
+             autocomplete="new-password" placeholder="a mesma de cima">
+
+      <button type="submit" class="btn-primario" id="btn-salvar-senha">Salvar senha</button>
+      <p id="senha-erro" class="erro" hidden></p>
+    </form>
+
+    <p class="login-rodape">Acesso restrito. Material confidencial CIMED.</p>
   </div>
 </div>
 
@@ -67,7 +127,7 @@
     </p>
     <p class="login-sub">Fale com a Josianny para liberar o acesso.</p>
     <button type="button" class="btn-primario" id="btn-sair-sem-acesso">Sair</button>
-    <p class="login-rodape">Acesso restrito · Material confidencial CIMED</p>
+    <p class="login-rodape">Acesso restrito. Material confidencial CIMED.</p>
   </div>
 </div>
 
@@ -556,6 +616,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="app.js?v=30"></script>
+<script type="module" src="app.js?v=31"></script>
 </body>
 </html>

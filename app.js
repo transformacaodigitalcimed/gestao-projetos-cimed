@@ -509,7 +509,113 @@ async function sair() {
 $('#btn-sair').addEventListener('click', sair);
 $('#btn-sair-sem-acesso').addEventListener('click', sair);
 
-sb.auth.onAuthStateChange((_evt, sessao) => {
+// =====================================================================
+// RECUPERAÇÃO DE SENHA
+//
+// Ao voltar do link do e-mail, o Supabase JÁ cria uma sessão válida. Sem a
+// trava abaixo a pessoa entraria direto no sistema e nunca trocaria a
+// senha, que é justamente o que ela veio fazer.
+//
+// O fragmento da URL (type=recovery) é lido aqui porque o supabase-js o
+// apaga assim que processa; depois disso só o evento avisa.
+// =====================================================================
+let emRecuperacao = /type=recovery/.test(location.hash);
+
+function mostrarTela(id) {
+  ['tela-login', 'tela-recuperar', 'tela-nova-senha', 'tela-sem-acesso']
+    .forEach((t) => { $('#' + t).hidden = t !== id; });
+}
+
+$('#btn-esqueci').addEventListener('click', () => {
+  $('#rec-email').value = $('#login-email').value.trim();
+  $('#rec-aviso').hidden = true;
+  $('#rec-erro').hidden = true;
+  mostrarTela('tela-recuperar');
+  $('#rec-email').focus();
+});
+
+$('#btn-voltar-login').addEventListener('click', () => mostrarTela('tela-login'));
+
+$('#form-recuperar').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = $('#btn-enviar-link');
+  const aviso = $('#rec-aviso');
+  const erro = $('#rec-erro');
+  aviso.hidden = true;
+  erro.hidden = true;
+  btn.disabled = true;
+  btn.textContent = 'Enviando…';
+
+  // O link traz a pessoa de volta para esta mesma página.
+  const { error } = await sb.auth.resetPasswordForEmail($('#rec-email').value.trim(), {
+    redirectTo: location.origin + location.pathname,
+  });
+
+  btn.disabled = false;
+  btn.textContent = 'Enviar link';
+
+  // Limite de envio precisa aparecer, senão a pessoa espera um e-mail que
+  // não vem. Os demais casos devolvem a mesma mensagem, para não revelar
+  // quem tem conta no sistema.
+  if (error && /rate|limit|seconds|segundos/i.test(error.message)) {
+    erro.textContent = 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.';
+    erro.hidden = false;
+    return;
+  }
+
+  aviso.textContent = 'Se existir uma conta com esse e-mail, o link já está a caminho. '
+    + 'Confira também a caixa de spam.';
+  aviso.hidden = false;
+});
+
+function abrirNovaSenha() {
+  emRecuperacao = true;
+  mostrarTela('tela-nova-senha');
+  $('#nova-senha').focus();
+}
+
+$('#form-nova-senha').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = $('#btn-salvar-senha');
+  const erro = $('#senha-erro');
+  const senha = $('#nova-senha').value;
+  erro.hidden = true;
+
+  if (senha !== $('#nova-senha-2').value) {
+    erro.textContent = 'As duas senhas não são iguais.';
+    erro.hidden = false;
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Salvando…';
+  const { error } = await sb.auth.updateUser({ password: senha });
+  btn.disabled = false;
+  btn.textContent = 'Salvar senha';
+
+  if (error) {
+    const linkMorto = /expired|invalid|session|token/i.test(error.message);
+    erro.textContent = linkMorto
+      ? 'Este link não vale mais. Volte ao login e peça um novo em "Esqueci minha senha".'
+      : 'Não foi possível salvar agora. Tente de novo em instantes.';
+    if (!linkMorto) console.error('updateUser:', error.message);
+    erro.hidden = false;
+    return;
+  }
+
+  // Sai e volta para o login: a pessoa entra com a senha nova, e fica
+  // claro que ela funcionou.
+  await sb.auth.signOut();
+  emRecuperacao = false;
+  mostrarTela('tela-login');
+  $('#login-email').value = '';
+  $('#login-senha').value = '';
+  toast('Senha alterada. Entre com a senha nova.');
+});
+
+sb.auth.onAuthStateChange((evt, sessao) => {
+  if (evt === 'PASSWORD_RECOVERY') return abrirNovaSenha();
+  if (emRecuperacao) return;
   if (sessao?.user) iniciar(sessao.user);
 });
 
@@ -519,6 +625,7 @@ sb.auth.onAuthStateChange((_evt, sessao) => {
     $('#login-erro').hidden = false;
     return;
   }
+  if (emRecuperacao) return abrirNovaSenha();
   const { data } = await sb.auth.getSession();
   if (data.session?.user) iniciar(data.session.user);
 })();
@@ -529,9 +636,8 @@ async function iniciar(user) {
 
   // Conta autenticada mas fora da lista: para aqui. Nada é carregado.
   if (!papel) {
-    $('#tela-login').hidden = true;
     $('#email-sem-acesso').textContent = user.email;
-    $('#tela-sem-acesso').hidden = false;
+    mostrarTela('tela-sem-acesso');
     return;
   }
 

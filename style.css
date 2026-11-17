@@ -98,6 +98,20 @@ table{border-collapse:collapse;width:100%}
   border:1px solid var(--linha);border-radius:var(--raio);background:var(--branco);
 }
 .login-card input:focus{outline:2px solid var(--amarelo);outline-offset:-1px;border-color:var(--amarelo-esc)}
+/* link em forma de botao: acessivel por teclado, discreto na tela */
+.link-discreto{
+  display:block;width:100%;margin-top:10px;padding:12px 6px;
+  background:none;border:0;font:inherit;font-size:13px;font-weight:600;
+  color:var(--cinza);cursor:pointer;text-decoration:underline;
+  text-underline-offset:3px;
+}
+.link-discreto:hover{color:var(--grafite)}
+.link-discreto:focus-visible{outline:2px solid var(--amarelo-esc);outline-offset:2px;border-radius:6px}
+.aviso-ok{
+  margin-top:12px;padding:10px 13px;border-radius:var(--raio);
+  background:var(--entregue-luz);color:var(--entregue);
+  font-size:12.5px;font-weight:600;line-height:1.45;
+}
 .login-rodape{margin-top:22px;padding-top:16px;border-top:1px solid var(--linha);
   font-size:11px;color:var(--cinza-claro);text-align:center}
 
