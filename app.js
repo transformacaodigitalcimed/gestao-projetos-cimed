@@ -34,11 +34,19 @@ function aplicarPrograma(id) {
 
   const alvo = visiveis.filter((pr) => !estado.programaAtivo || pr.id === estado.programaAtivo);
 
-  // Em "Todos", o quadro mostra a união das etapas, na ordem dos programas
+  // Em "Todos", o quadro mostra a união das etapas, na ordem dos programas.
   const etapas = [];
   alvo.forEach((pr) => (pr.etapas || []).forEach((e) => {
     if (!etapas.some((x) => x.nome === e.nome)) etapas.push(e);
   }));
+
+  // Etapa de trabalho de um programa vinha DEPOIS do "Entregue" do
+  // programa anterior, e o quadro deixava de ler como um caminho. Aqui
+  // as de fluxo ficam na frente, cada uma na ordem em que apareceu, e
+  // entregue e parada fecham a fila. (sort é estável, a ordem interna
+  // de cada grupo se mantém)
+  const peso = (e) => (e.tipo === 'parada' ? 2 : e.tipo === 'entregue' ? 1 : 0);
+  etapas.sort((a, b) => peso(a) - peso(b));
 
   // Pilares também vêm do programa: quem não tem, não vê o campo.
   PILARES = [];
