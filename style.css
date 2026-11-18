@@ -1310,3 +1310,68 @@ body.arrastando-algo{cursor:grabbing;user-select:none}
   .lc-item{gap:8px}
   .lc-nome{flex:1 1 100%}
 }
+
+
+/* =====================================================================
+   O QUE TRAVA (18/11/2026, decisão 0008)
+
+   Mesmo desenho do bloco de tarefas, com o âmbar como cor de aviso.
+   Âmbar e não vermelho de propósito: travado pede ação, não é erro.
+   ===================================================================== */
+
+.bloco-trava{padding:18px 26px 22px;border-top:1px solid var(--linha)}
+.bloco-trava[hidden]{display:none}
+.bloco-trava h4{font-size:13px;font-weight:700;margin-bottom:12px;
+  display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+
+.lista-trava li{
+  display:flex;gap:10px;align-items:flex-start;padding:9px 0;
+  border-bottom:1px solid var(--linha);
+}
+.lista-trava li:last-child{border-bottom:0}
+.lista-trava li.vazio{display:block;color:var(--cinza-claro);font-size:12.5px;padding:6px 0}
+
+.trava-ponto{
+  flex:0 0 auto;width:8px;height:8px;border-radius:50%;
+  margin-top:6px;background:var(--ambar);
+}
+.trava-fechada .trava-ponto{background:var(--linha)}
+.trava-fechada .trava-oque{color:var(--cinza-claro);text-decoration:line-through}
+.trava-fechada .trava-meta{color:var(--cinza-claro)}
+
+.trava-corpo{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.trava-oque{font-size:13px;color:var(--grafite);line-height:1.35;word-break:break-word}
+.trava-meta{display:flex;gap:10px;flex-wrap:wrap;font-size:11.5px;color:var(--cinza)}
+.trava-meta b{color:var(--grafite);font-weight:600}
+
+.trava-ok{flex:0 0 auto;font-size:12px;white-space:nowrap}
+
+.form-trava{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.form-trava[hidden]{display:none}
+.form-trava input{
+  padding:8px 11px;border:1px solid var(--linha);border-radius:var(--raio);
+  background:var(--branco);font-size:13px;
+}
+.form-trava #trava-oque{flex:1 1 240px;min-width:170px}
+.form-trava #trava-quem{flex:0 1 150px}
+.form-trava input:focus{outline:2px solid var(--amarelo);outline-offset:-1px}
+
+/* o ponto no card do quadro. Discreto de propósito: avisa sem gritar,
+   e o motivo inteiro aparece ao passar o mouse. */
+.ktrava{
+  display:inline-block;width:7px;height:7px;border-radius:50%;
+  background:var(--ambar);margin-right:6px;vertical-align:middle;
+  cursor:help;flex:none;
+}
+
+/* a linha do painel Atenção imediata */
+.pill.trava{background:var(--ambar-luz);color:var(--ambar)}
+.trava-quando{color:var(--ambar);cursor:help}
+
+/* celular: o dedo precisa de alvo, e o formulário vira coluna */
+@media(max-width:720px){
+  .trava-ok{min-height:44px;padding:0 12px}
+  .form-trava #trava-oque,.form-trava #trava-quem,
+  .form-trava #trava-desde,.form-trava button{flex:1 1 100%}
+  .form-trava input,.form-trava button{min-height:44px}
+}

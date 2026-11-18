@@ -161,6 +161,7 @@ const estado = {
   historico: [],
   anexos: [],
   tarefas: [],
+  travamentos: [],
   modelos: [],
   programas: [],
   programasVisiveis: null,   // null = enxerga todos
@@ -188,6 +189,14 @@ function paraData(v) {
   return new Date(a, m - 1, d);
 }
 const dias = (de, ate) => Math.round((ate - de) / 86400000);
+
+// Hoje no formato que o banco e o <input type="date"> esperam. Montado a
+// partir da data local, nunca por toISOString, que converte para UTC e
+// devolve o dia anterior para quem está no fuso do Brasil.
+function hojeISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 function fmtData(v) {
   const d = paraData(v);
@@ -741,12 +750,13 @@ function aplicarPapel() {
 // DADOS
 // =====================================================================
 async function carregarTudo() {
-  const [proj, com, hist, anx, tar, mod, prg, leit] = await Promise.all([
+  const [proj, com, hist, anx, tar, trv, mod, prg, leit] = await Promise.all([
     sb.from('projetos').select('*').eq('arquivado', false),
     sb.from('comentarios').select('*').order('criado_em', { ascending: false }).limit(200),
     sb.from('historico').select('*').order('criado_em', { ascending: false }).limit(200),
     sb.from('anexos').select('*').order('criado_em', { ascending: false }),
     sb.from('tarefas').select('*').order('ordem', { ascending: true }),
+    sb.from('travamentos').select('*').order('desde', { ascending: false }),
     sb.from('modelos').select('*').order('nome', { ascending: true }),
     sb.from('programas').select('*').eq('ativo', true).order('ordem', { ascending: true }),
     sb.from('leituras').select('lido_ate').eq('user_id', estado.usuario.id).maybeSingle(),
@@ -764,12 +774,14 @@ async function carregarTudo() {
   // Sem erro fatal: se a tabela ainda não existe, o bloco só não aparece.
   estado.anexos = anx.data || [];
   estado.tarefas = tar.data || [];
+  estado.travamentos = trv.data || [];
   estado.modelos = mod.data || [];
   estado.lidoAte = leit.data?.lido_ate || null;
 
   if (anx.error) console.warn('Anexos indisponíveis — rode o 03:', anx.error.message);
   if (tar.error) console.warn('Tarefas indisponíveis — rode o 05:', tar.error.message);
   if (prg.error) console.warn('Programas indisponíveis — rode o 07:', prg.error.message);
+  if (trv.error) console.warn('Travamentos indisponíveis — rode o 26:', trv.error.message);
 
   // sem a tabela de programas, o sistema segue como um quadro só
   if (!estado.programas.length) estado.projetos = estado.todosProjetos;
@@ -979,14 +991,30 @@ function renderVisao() {
     .sort((a, b) => (a.r.d ?? 999) - (b.r.d ?? 999))
     .slice(0, 8);
 
-  $('#lista-atencao').innerHTML = urgentes.length
-    ? urgentes.map(({ p, r }) => `
-        <li>
-          <span class="pill ${RAG[r.k].cls}">${RAG[r.k].nome}</span>
-          <span class="nome" data-abrir="${p.id}">${esc(p.nome)}</span>
-          <span class="quando" style="color:${RAG[r.k].cor}">${esc(r.motivo)}</span>
-        </li>`).join('')
-    : '<li class="vazio">Nenhum projeto em risco de prazo. Tudo dentro do combinado.</li>';
+  // Travado vem antes de atrasado: prazo apertado ainda anda, projeto
+  // parado esperando alguém não anda de jeito nenhum.
+  const travados = ps
+    .flatMap((p) => travasAbertas(p.id).map((t) => ({ p, t })))
+    .sort((a, b) => diasParado(b.t) - diasParado(a.t))
+    .slice(0, 5);
+
+  const linhasTrava = travados.map(({ p, t }) => `
+    <li>
+      <span class="pill trava">Travado</span>
+      <span class="nome" data-abrir="${p.id}">${esc(p.nome)}</span>
+      <span class="quando trava-quando" title="${esc(t.o_que)}">${esc(textoParado(t))}${
+        t.com_quem ? ', com ' + esc(t.com_quem) : ''}</span>
+    </li>`).join('');
+
+  const linhasPrazo = urgentes.map(({ p, r }) => `
+    <li>
+      <span class="pill ${RAG[r.k].cls}">${RAG[r.k].nome}</span>
+      <span class="nome" data-abrir="${p.id}">${esc(p.nome)}</span>
+      <span class="quando" style="color:${RAG[r.k].cor}">${esc(r.motivo)}</span>
+    </li>`).join('');
+
+  $('#lista-atencao').innerHTML = (linhasTrava + linhasPrazo)
+    || '<li class="vazio">Nada travado e nenhum projeto em risco de prazo. Tudo dentro do combinado.</li>';
 
   renderCorrigir(ps);
   renderQuadro();
@@ -1455,6 +1483,14 @@ function cardKanban(p) {
 
   const parado = FORA_DO_FLUXO.includes(p.status);
 
+  // Sinal de travamento: ponto discreto, o motivo aparece no mouse.
+  const travas = travasAbertas(p.id);
+  const sinalTrava = travas.length
+    ? `<span class="ktrava" aria-label="Projeto travado"
+             title="Travado ${esc(textoParado(travas[0]))}: ${esc(travas[0].o_que)}${
+               travas[0].com_quem ? ', com ' + esc(travas[0].com_quem) : ''}"></span>`
+    : '';
+
   // O card inteiro abre a ficha. Os controles internos param o clique
   // antes de chegar aqui, então mexer no status não abre nada.
   return `
@@ -1462,7 +1498,7 @@ function cardKanban(p) {
              ${pl ? `style="--pcor:${pl.cor}" title="Pilar: ${esc(pl.nome)}"` : ''}
              data-id="${p.id}" data-abrir="${p.id}">
       <div class="kcard-cab">
-        <h5>${esc(p.nome)}</h5>
+        <h5>${sinalTrava}${esc(p.nome)}</h5>
         ${dono ? `<button class="kexcluir" data-excluir="${p.id}" title="Excluir projeto">×</button>` : ''}
       </div>
       <div class="kcard-topo">
@@ -2247,6 +2283,10 @@ function abrirProjeto(id, etapaPadrao) {
   $('#modal-tarefas').hidden = !p;
   if (p) renderTarefas(p.id);
 
+  // ----------------------------------------------------- o que trava
+  $('#bloco-trava').hidden = !p;
+  if (p) renderTravamentos(p.id);
+
   // o modelo só faz sentido na criação; depois ele vive no bloco de tarefas
   $('#campo-modelo').hidden = !!p || !dono || !estado.modelos.length;
   $('#f-modelo').innerHTML = '<option value="">Começar do zero</option>' +
@@ -2392,6 +2432,120 @@ $('#btn-ics').addEventListener('click', () => {
 const tarefasDe = (projetoId) =>
   estado.tarefas.filter((t) => t.projeto_id === projetoId)
     .sort((a, b) => a.ordem - b.ordem || a.criado_em.localeCompare(b.criado_em));
+
+// =====================================================================
+// O QUE TRAVA
+//
+// O que impede o projeto de andar, com quem precisa resolver e desde
+// quando. Antes isso vivia solto no campo Observações e sumia de vista.
+// Resolvido não é apagado: fica com a data, para o sistema ir dizendo o
+// que mais trava os projetos do RH (decisão 0008).
+// =====================================================================
+function travamentosDe(projetoId) {
+  return estado.travamentos.filter((t) => t.projeto_id === projetoId);
+}
+
+function travasAbertas(projetoId) {
+  return travamentosDe(projetoId).filter((t) => !t.resolvido_em);
+}
+
+// Dias parados até hoje. Registrado hoje mostra "desde hoje", não "0 dias".
+function diasParado(t) {
+  const d = paraData(t.desde);
+  if (!d) return 0;
+  return Math.max(0, Math.round((HOJE - d) / 86400000));
+}
+
+function textoParado(t) {
+  const n = diasParado(t);
+  return n === 0 ? 'desde hoje' : n === 1 ? 'há 1 dia' : `há ${n} dias`;
+}
+
+function renderTravamentos(projetoId) {
+  const lista = travamentosDe(projetoId);
+  const abertos = lista.filter((t) => !t.resolvido_em)
+    .sort((a, b) => String(a.desde).localeCompare(String(b.desde)));
+  const fechados = lista.filter((t) => t.resolvido_em)
+    .sort((a, b) => String(b.resolvido_em).localeCompare(String(a.resolvido_em)));
+  const dono = podeEditar();
+
+  $('#trava-resumo').textContent = abertos.length
+    ? `${abertos.length} em aberto`
+    : (fechados.length ? `nada parado agora, ${fechados.length} já resolvido(s)`
+                       : 'nada parado por enquanto');
+
+  const linha = (t) => {
+    const aberto = !t.resolvido_em;
+    const dias = aberto ? textoParado(t)
+      : `${Math.max(0, Math.round((paraData(t.resolvido_em) - paraData(t.desde)) / 86400000))} dia(s) parado`;
+    return `
+      <li class="${aberto ? 'trava-aberta' : 'trava-fechada'}">
+        <span class="trava-ponto" aria-hidden="true"></span>
+        <div class="trava-corpo">
+          <span class="trava-oque">${esc(t.o_que)}</span>
+          <span class="trava-meta">
+            ${t.com_quem ? `<b>${esc(t.com_quem)}</b>` : '<i>sem dono definido</i>'}
+            <span>${esc(dias)}</span>
+            ${!aberto ? `<span>resolvido em ${fmtData(t.resolvido_em)}</span>`
+              : diasParado(t) ? `<span>desde ${fmtData(t.desde)}</span>` : ''}
+          </span>
+        </div>
+        ${aberto && dono
+          ? `<button type="button" class="btn-texto trava-ok" data-resolver="${t.id}">Resolvido</button>`
+          : ''}
+      </li>`;
+  };
+
+  $('#lista-trava').innerHTML = lista.length
+    ? abertos.map(linha).join('') + fechados.map(linha).join('')
+    : '<li class="vazio">Nada travado neste projeto.</li>';
+
+  $('#form-trava').hidden = !dono;
+  $('#trava-desde').value = $('#trava-desde').value || hojeISO();
+}
+
+$('#form-trava').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const o_que = $('#trava-oque').value.trim();
+  if (!o_que || !estado.editando) return;
+
+  const desde = $('#trava-desde').value || hojeISO();
+  if (paraData(desde) > HOJE) {
+    return toast('A data de início não pode ser no futuro.', true);
+  }
+
+  const { error } = await sb.from('travamentos').insert({
+    projeto_id: estado.editando,
+    o_que,
+    com_quem: $('#trava-quem').value.trim() || null,
+    desde,
+    criado_por: estado.nome,
+  });
+  if (error) return toast('Não consegui registrar: ' + error.message, true);
+
+  $('#trava-oque').value = '';
+  $('#trava-quem').value = '';
+  $('#trava-desde').value = hojeISO();
+  const id = estado.editando;
+  await carregarTudo();
+  renderTravamentos(id);
+  toast('Travamento registrado');
+});
+
+$('#lista-trava').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-resolver]');
+  if (!btn || !podeEditar()) return;
+
+  const { error } = await sb.from('travamentos')
+    .update({ resolvido_em: hojeISO(), resolvido_por: estado.nome })
+    .eq('id', btn.dataset.resolver);
+  if (error) return toast('Não consegui marcar como resolvido: ' + error.message, true);
+
+  const id = estado.editando;
+  await carregarTudo();
+  renderTravamentos(id);
+  toast('Travamento resolvido');
+});
 
 function renderTarefas(projetoId) {
   const lista = tarefasDe(projetoId);

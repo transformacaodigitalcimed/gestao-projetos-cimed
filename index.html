@@ -20,7 +20,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- O ?v= força o navegador a buscar a versão nova em vez da guardada em cache.
      SEMPRE que alterar style.css ou app.js, some 1 nos dois números abaixo. -->
-<link rel="stylesheet" href="style.css?v=40">
+<link rel="stylesheet" href="style.css?v=41">
 </head>
 <body>
 
@@ -552,6 +552,21 @@
       </div>
     </div>
 
+    <!-- --------------------------------------------- O QUE TRAVA -->
+    <div class="bloco-trava" id="bloco-trava">
+      <h4>O que trava <span class="dica-bloco" id="trava-resumo"></span></h4>
+      <ul class="lista-trava" id="lista-trava"></ul>
+
+      <form class="form-trava" id="form-trava">
+        <input id="trava-oque" maxlength="200" autocomplete="off"
+               placeholder="O que está impedindo este projeto de andar">
+        <input id="trava-quem" list="lista-pessoas" autocomplete="off"
+               placeholder="Com quem">
+        <input id="trava-desde" type="date" title="Parado desde">
+        <button type="submit" class="btn-primario pequeno">Registrar</button>
+      </form>
+    </div>
+
     <!-- --------------------------------------------- COMPLIANCE -->
     <div class="bloco-compliance" id="bloco-compliance">
       <h4>Compliance</h4>
@@ -615,6 +630,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="app.js?v=40"></script>
+<script type="module" src="app.js?v=41"></script>
 </body>
 </html>
