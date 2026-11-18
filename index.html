@@ -20,7 +20,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <!-- O ?v= força o navegador a buscar a versão nova em vez da guardada em cache.
      SEMPRE que alterar style.css ou app.js, some 1 nos dois números abaixo. -->
-<link rel="stylesheet" href="style.css?v=41">
+<link rel="stylesheet" href="style.css?v=42">
 </head>
 <body>
 
@@ -169,6 +169,7 @@
 
     <!-- ------------------------------------------------ VISÃO GERAL -->
     <section class="view ativa" id="view-visao">
+      <div class="faixa-checkin" id="faixa-checkin" hidden></div>
       <div class="view-head">
         <h2>Visão geral</h2>
         <p class="view-sub" id="visao-sub"></p>
@@ -275,6 +276,23 @@
     </section>
 
     <!-- ---------------------------------------------- NOTIFICAÇÕES -->
+    <section class="view" id="view-checkin">
+      <div class="view-head">
+        <div>
+          <h2>Check-in da semana</h2>
+          <p class="view-sub" id="checkin-sub"></p>
+        </div>
+        <button type="button" class="btn-texto" id="btn-checkin-sair">Voltar</button>
+      </div>
+
+      <div class="checkin-lista" id="checkin-lista"></div>
+
+      <div class="checkin-rodape" id="checkin-rodape" hidden>
+        <button type="button" class="btn-primario" id="btn-checkin-enviar">Enviar check-in</button>
+        <span class="checkin-aviso" id="checkin-aviso"></span>
+      </div>
+    </section>
+
     <section class="view" id="view-notificacoes">
       <div class="view-head">
         <h2>Notificações</h2>
@@ -630,6 +648,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="app.js?v=41"></script>
+<script type="module" src="app.js?v=42"></script>
 </body>
 </html>

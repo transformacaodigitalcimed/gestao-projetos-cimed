@@ -139,7 +139,7 @@ const BUCKET = 'anexos-projetos';
 //    dar clareza de papel a colegas, não para conter quem quer burlar.
 // =====================================================================
 const PAPEIS = {
-  gestao:    { abas: ['visao', 'quadro', 'cronograma', 'notificacoes'], editaProjeto: true },
+  gestao:    { abas: ['visao', 'quadro', 'cronograma', 'notificacoes', 'checkin'], editaProjeto: true },
   controles: { abas: ['quadro'],                                       editaProjeto: false },
 };
 
@@ -162,6 +162,7 @@ const estado = {
   anexos: [],
   tarefas: [],
   travamentos: [],
+  checkin: { projetos: [], respondido: false, respostas: {} },
   modelos: [],
   programas: [],
   programasVisiveis: null,   // null = enxerga todos
@@ -196,6 +197,14 @@ const dias = (de, ate) => Math.round((ate - de) / 86400000);
 function hojeISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// A segunda-feira da semana de uma data. Mesma conta da função
+// segunda_da_semana do banco: a semana é identificada pela segunda.
+function segundaDaSemana(d = new Date()) {
+  const base = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  base.setDate(base.getDate() - ((base.getDay() + 6) % 7));
+  return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`;
 }
 
 function fmtData(v) {
@@ -679,6 +688,13 @@ async function iniciar(user) {
   montarSelects();
   await carregarTudo();
   ligarTempoReal();
+
+  // O link do Teams aponta para #checkin: quem chega por ele cai direto
+  // na tela de responder, sem procurar nada.
+  if (location.hash === '#checkin' && podeEditar()) {
+    irPara('checkin');
+    history.replaceState(null, '', location.pathname + location.search);
+  }
 }
 
 // Qual programa abrir: o último usado, se ainda for permitido; senão o
@@ -750,13 +766,16 @@ function aplicarPapel() {
 // DADOS
 // =====================================================================
 async function carregarTudo() {
-  const [proj, com, hist, anx, tar, trv, mod, prg, leit] = await Promise.all([
+  const [proj, com, hist, anx, tar, trv, ckp, ckr, mod, prg, leit] = await Promise.all([
     sb.from('projetos').select('*').eq('arquivado', false),
     sb.from('comentarios').select('*').order('criado_em', { ascending: false }).limit(200),
     sb.from('historico').select('*').order('criado_em', { ascending: false }).limit(200),
     sb.from('anexos').select('*').order('criado_em', { ascending: false }),
     sb.from('tarefas').select('*').order('ordem', { ascending: true }),
     sb.from('travamentos').select('*').order('desde', { ascending: false }),
+    sb.rpc('meus_projetos_do_checkin'),
+    sb.from('checkins').select('semana').eq('user_id', estado.usuario.id)
+      .eq('semana', segundaDaSemana()).maybeSingle(),
     sb.from('modelos').select('*').order('nome', { ascending: true }),
     sb.from('programas').select('*').eq('ativo', true).order('ordem', { ascending: true }),
     sb.from('leituras').select('lido_ate').eq('user_id', estado.usuario.id).maybeSingle(),
@@ -775,6 +794,8 @@ async function carregarTudo() {
   estado.anexos = anx.data || [];
   estado.tarefas = tar.data || [];
   estado.travamentos = trv.data || [];
+  estado.checkin.projetos  = ckp.data || [];
+  estado.checkin.respondido = !!ckr.data;
   estado.modelos = mod.data || [];
   estado.lidoAte = leit.data?.lido_ate || null;
 
@@ -782,6 +803,7 @@ async function carregarTudo() {
   if (tar.error) console.warn('Tarefas indisponíveis — rode o 05:', tar.error.message);
   if (prg.error) console.warn('Programas indisponíveis — rode o 07:', prg.error.message);
   if (trv.error) console.warn('Travamentos indisponíveis — rode o 26:', trv.error.message);
+  if (ckp.error) console.warn('Check-in indisponível — rode o 27:', ckp.error.message);
 
   // sem a tabela de programas, o sistema segue como um quadro só
   if (!estado.programas.length) estado.projetos = estado.todosProjetos;
@@ -886,6 +908,7 @@ function irPara(view) {
   $('#sino').classList.toggle('ativo', view === 'notificacoes');
   $$('.view').forEach((s) => s.classList.toggle('ativa', s.id === 'view-' + view));
   if (view === 'cronograma') renderGantt();
+  if (view === 'checkin') renderCheckin();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -925,7 +948,9 @@ function renderTudo() {
   renderFiltros();
   montarListaPessoas();
   renderNotificacoes();
+  renderFaixaCheckin();
   if (estado.view === 'cronograma') renderGantt();
+  if (estado.view === 'checkin') renderCheckin();
   $('#rodape-atualizacao').textContent = 'Atualizado ' + fmtQuando(new Date().toISOString());
 }
 
@@ -2432,6 +2457,174 @@ $('#btn-ics').addEventListener('click', () => {
 const tarefasDe = (projetoId) =>
   estado.tarefas.filter((t) => t.projeto_id === projetoId)
     .sort((a, b) => a.ordem - b.ordem || a.criado_em.localeCompare(b.criado_em));
+
+// =====================================================================
+// CHECK-IN DA SEMANA
+//
+// Toda segunda a pessoa recebe no Teams a lista dos projetos dela e cai
+// aqui pelo link. Responde tudo numa tela só, em vez de abrir ficha por
+// ficha, que é o que ninguém fazia (decisão 0008).
+//
+// Quem decide de quem é cada projeto é a função meus_projetos_do_checkin
+// no banco, pelos apelidos do perfil: o campo responsável é texto livre e
+// a mesma pessoa aparece escrita de vários jeitos.
+// =====================================================================
+function renderFaixaCheckin() {
+  const faixa = $('#faixa-checkin');
+  const n = estado.checkin.projetos.length;
+  const mostrar = n > 0 && !estado.checkin.respondido && podeEditar();
+
+  faixa.hidden = !mostrar;
+  if (!mostrar) return;
+
+  faixa.innerHTML = `
+    <span class="fc-ponto"></span>
+    <span class="fc-txt">Check-in da semana: ${n} projeto${n > 1 ? 's esperam' : ' espera'} você</span>
+    <button type="button" class="fc-btn" id="btn-ir-checkin">Responder</button>`;
+}
+
+$('#faixa-checkin').addEventListener('click', (e) => {
+  if (e.target.closest('#btn-ir-checkin')) irPara('checkin');
+});
+
+$('#btn-checkin-sair').addEventListener('click', () => irPara('visao'));
+
+function renderCheckin() {
+  const lista = estado.checkin.projetos;
+  const resp = estado.checkin.respostas;
+
+  $('#checkin-sub').textContent = estado.checkin.respondido
+    ? 'Você já respondeu esta semana. Pode responder de novo se algo mudou.'
+    : 'Diga rapidinho como está cada um. O que você escrever aqui vira o próximo passo do projeto.';
+
+  if (!lista.length) {
+    $('#checkin-lista').innerHTML =
+      '<p class="vazio">Nenhum projeto ativo no seu nome esta semana.</p>';
+    $('#checkin-rodape').hidden = true;
+    return;
+  }
+
+  $('#checkin-lista').innerHTML = lista.map((p) => {
+    const r = resp[p.id] || {};
+    const atrasado = p.data_prevista && paraData(p.data_prevista) < HOJE;
+    return `
+      <article class="ck-card ${r.como === 'travou' ? 'ck-travou' : ''}" data-ck="${p.id}">
+        <div class="ck-cab">
+          <h4>${esc(p.nome)}</h4>
+          <span class="ck-prazo ${atrasado ? 'venceu' : ''}">${
+            p.data_prevista ? (atrasado ? 'venceu em ' : 'entrega em ') + fmtData(p.data_prevista)
+                            : 'sem data prevista'}</span>
+        </div>
+
+        ${p.travado ? '<p class="ck-ja-travado">Este projeto já tem um travamento aberto.</p>' : ''}
+
+        <div class="ck-escolha" role="group" aria-label="Como está o projeto">
+          <button type="button" class="ck-op ${r.como === 'anda' ? 'sel' : ''}"
+                  data-como="anda" data-p="${p.id}">Está andando</button>
+          <button type="button" class="ck-op ${r.como === 'travou' ? 'sel' : ''}"
+                  data-como="travou" data-p="${p.id}">Travou</button>
+        </div>
+
+        <label class="ck-rot" for="ck-passo-${p.id}">Próximo passo</label>
+        <input class="ck-campo" id="ck-passo-${p.id}" data-passo="${p.id}" maxlength="200"
+               placeholder="O que vem agora" value="${esc(r.passo ?? p.proximo_passo ?? '')}">
+
+        <div class="ck-trava" ${r.como === 'travou' ? '' : 'hidden'}>
+          <label class="ck-rot" for="ck-oque-${p.id}">O que trava</label>
+          <input class="ck-campo" id="ck-oque-${p.id}" data-oque="${p.id}" maxlength="200"
+                 placeholder="O que precisa acontecer para destravar" value="${esc(r.oque || '')}">
+          <label class="ck-rot" for="ck-quem-${p.id}">Com quem</label>
+          <input class="ck-campo" id="ck-quem-${p.id}" data-quem="${p.id}" list="lista-pessoas"
+                 placeholder="Quem precisa resolver" value="${esc(r.quem || '')}">
+        </div>
+      </article>`;
+  }).join('');
+
+  $('#checkin-rodape').hidden = false;
+  $('#checkin-aviso').textContent = '';
+}
+
+// Guarda a resposta em memória enquanto a pessoa preenche, para o
+// redesenho não apagar o que ela já escreveu.
+function guardarResposta(id, campo, valor) {
+  estado.checkin.respostas[id] = { ...(estado.checkin.respostas[id] || {}), [campo]: valor };
+}
+
+$('#checkin-lista').addEventListener('click', (e) => {
+  const op = e.target.closest('[data-como]');
+  if (!op) return;
+  guardarResposta(op.dataset.p, 'como', op.dataset.como);
+  renderCheckin();
+});
+
+$('#checkin-lista').addEventListener('input', (e) => {
+  const el = e.target;
+  if (el.dataset.passo) guardarResposta(el.dataset.passo, 'passo', el.value);
+  if (el.dataset.oque)  guardarResposta(el.dataset.oque,  'oque',  el.value);
+  if (el.dataset.quem)  guardarResposta(el.dataset.quem,  'quem',  el.value);
+});
+
+$('#btn-checkin-enviar').addEventListener('click', async () => {
+  const respostas = estado.checkin.respostas;
+  const ids = Object.keys(respostas).filter((id) => respostas[id].como);
+
+  if (!ids.length) {
+    return toast('Escolha "Está andando" ou "Travou" em pelo menos um projeto.', true);
+  }
+
+  // Travou sem dizer o que trava não ajuda ninguém: o registro ficaria vazio.
+  const semMotivo = ids.filter((id) => respostas[id].como === 'travou'
+                                       && !(respostas[id].oque || '').trim());
+  if (semMotivo.length) {
+    return toast('Diga o que está travando, senão o registro fica vazio.', true);
+  }
+
+  const btn = $('#btn-checkin-enviar');
+  btn.disabled = true;
+  $('#checkin-aviso').textContent = 'Enviando...';
+
+  try {
+    for (const id of ids) {
+      const r = respostas[id];
+      const antes = estado.checkin.projetos.find((p) => p.id === id);
+
+      const passo = (r.passo ?? '').trim();
+      if (passo !== (antes?.proximo_passo || '')) {
+        await salvarProjeto(id, { proximo_passo: passo || null });
+      }
+
+      if (r.como === 'travou') {
+        const { error } = await sb.from('travamentos').insert({
+          projeto_id: id,
+          o_que: r.oque.trim(),
+          com_quem: (r.quem || '').trim() || null,
+          desde: hojeISO(),
+          criado_por: estado.nome,
+        });
+        if (error) throw error;
+      }
+    }
+
+    const { error } = await sb.from('checkins').upsert({
+      user_id: estado.usuario.id,
+      semana: segundaDaSemana(),
+      respondido_em: new Date().toISOString(),
+      quantos: ids.length,
+    }, { onConflict: 'user_id,semana' });
+    if (error) throw error;
+
+    estado.checkin.respostas = {};
+    await carregarTudo();
+    toast(`Check-in enviado: ${ids.length} projeto(s)`);
+    irPara('visao');
+  } catch (err) {
+    console.error('Falha ao enviar o check-in:', err);
+    toast('Nao consegui enviar: ' + (err.message || 'erro desconhecido'), true);
+    $('#checkin-aviso').textContent = '';
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 // =====================================================================
 // O QUE TRAVA

@@ -1375,3 +1375,72 @@ body.arrastando-algo{cursor:grabbing;user-select:none}
   .form-trava #trava-desde,.form-trava button{flex:1 1 100%}
   .form-trava input,.form-trava button{min-height:44px}
 }
+
+
+/* =====================================================================
+   CHECK-IN DA SEMANA (18/11/2026, decisão 0008)
+
+   A faixa reaproveita o visual da faixa de corrigir, que já estava
+   aprovada. A tela é uma coluna de cartões, um por projeto: a pessoa
+   desce respondendo e envia tudo de uma vez.
+   ===================================================================== */
+
+.faixa-checkin{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  background:var(--amarelo-luz);border:1px solid #F2E3A8;
+  border-radius:var(--raio);padding:9px 10px 9px 13px;margin-bottom:16px;
+}
+.faixa-checkin[hidden]{display:none}
+
+.checkin-lista{display:flex;flex-direction:column;gap:12px}
+.checkin-lista .vazio{color:var(--cinza-claro);font-size:13px;padding:10px 0}
+
+.ck-card{
+  border:1px solid var(--linha);border-radius:var(--raio);
+  padding:14px 16px 16px;background:var(--branco);
+  transition:border-color .13s;
+}
+.ck-card.ck-travou{border-color:var(--ambar);background:var(--ambar-luz)}
+
+.ck-cab{display:flex;gap:12px;align-items:baseline;justify-content:space-between;flex-wrap:wrap}
+.ck-cab h4{font-size:14px;font-weight:700;color:var(--preto);line-height:1.3}
+.ck-prazo{font-size:11.5px;color:var(--cinza);white-space:nowrap}
+.ck-prazo.venceu{color:var(--vermelho);font-weight:600}
+
+.ck-ja-travado{font-size:11.5px;color:var(--ambar);margin-top:5px}
+
+.ck-escolha{display:flex;gap:8px;margin:12px 0 4px;flex-wrap:wrap}
+.ck-op{
+  flex:1 1 140px;min-height:40px;padding:0 14px;
+  border:1px solid var(--linha);border-radius:var(--raio);
+  background:var(--branco);color:var(--grafite);
+  font-size:13px;font-weight:600;cursor:pointer;
+  transition:border-color .13s,background .13s,color .13s;
+}
+.ck-op:hover{border-color:var(--cinza-claro)}
+.ck-op:focus-visible{outline:2px solid var(--preto);outline-offset:2px}
+.ck-op.sel{background:var(--preto);border-color:var(--preto);color:var(--branco)}
+.ck-op[data-como="travou"].sel{background:var(--ambar);border-color:var(--ambar);color:var(--branco)}
+
+.ck-rot{display:block;font-size:11px;font-weight:600;color:var(--cinza);
+  text-transform:uppercase;letter-spacing:.04em;margin:12px 0 5px}
+.ck-campo{
+  width:100%;padding:9px 11px;font-size:13px;
+  border:1px solid var(--linha);border-radius:var(--raio);background:var(--branco);
+}
+.ck-campo:focus{outline:2px solid var(--amarelo);outline-offset:-1px}
+
+.ck-trava[hidden]{display:none}
+
+.checkin-rodape{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  margin-top:18px;padding-top:16px;border-top:1px solid var(--linha);
+}
+.checkin-rodape[hidden]{display:none}
+.checkin-aviso{font-size:12px;color:var(--cinza)}
+
+@media(max-width:720px){
+  .ck-op{flex:1 1 100%;min-height:44px}
+  .ck-campo{min-height:44px}
+  .checkin-rodape .btn-primario{width:100%;min-height:44px}
+}
