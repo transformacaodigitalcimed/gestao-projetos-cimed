@@ -682,7 +682,14 @@ function escolherPrograma() {
 
   let guardado = '';
   try { guardado = localStorage.getItem('programa') || ''; } catch { /* sem problema */ }
-  if (guardado && visiveis.some((pr) => pr.id === guardado)) return guardado;
+
+  // Quadro guardado que está vazio abre o sistema sem nada na tela, e quem
+  // não repara no alternador acha que perdeu o acesso. Foi o que aconteceu
+  // com a Josilene até 18/11/2026. Nesse caso, abre em "Todos".
+  if (guardado && visiveis.some((pr) => pr.id === guardado)
+      && estado.todosProjetos.some((p) => p.programa_id === guardado)) {
+    return guardado;
+  }
   return '';
 }
 
@@ -766,7 +773,10 @@ async function carregarTudo() {
 
   // sem a tabela de programas, o sistema segue como um quadro só
   if (!estado.programas.length) estado.projetos = estado.todosProjetos;
-  else { montarAlternador(); aplicarPrograma(escolherPrograma()); }
+  // aplicarPrograma antes do alternador, de propósito: é ele que define
+  // qual quadro está em foco, e o alternador só sabe se marcar depois.
+  // Invertido, o seletor dizia "Todos os programas" com a tela filtrada.
+  else { aplicarPrograma(escolherPrograma()); montarAlternador(); }
 
   renderTudo();
 }
